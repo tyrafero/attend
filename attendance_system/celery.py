@@ -16,10 +16,10 @@ app.autodiscover_tasks()
 
 # Celery Beat schedule
 app.conf.beat_schedule = {
-    # Auto clock-out check every 10 minutes
+    # Auto clock-out check every 30 minutes (reduced from 10)
     'auto-clock-out-check': {
         'task': 'attendance.tasks.auto_clock_out_check',
-        'schedule': crontab(minute='*/10'),  # Every 10 minutes
+        'schedule': crontab(minute='*/30'),  # Every 30 minutes
     },
     # Missed clock-out check daily at 8 PM
     'missed-clock-out-reminder': {
@@ -32,6 +32,14 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=17, minute=0, day_of_week=5),  # Friday 5 PM
     },
 }
+
+# Additional Celery configuration
+app.conf.update(
+    worker_max_tasks_per_child=1000,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+)
 
 @app.task(bind=True)
 def debug_task(self):
