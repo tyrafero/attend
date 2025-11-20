@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Attendance - Welcome</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .pin-display {
+            background: #f5f5f5;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+            letter-spacing: 10px;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .key {
+            background: #f0f0f0;
+            border: none;
+            border-radius: 10px;
+            padding: 25px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #333;
+        }
+
+        .key:hover {
+            background: #e0e0e0;
+            transform: scale(1.05);
+        }
+
+        .key:active {
+            transform: scale(0.95);
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 18px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            grid-column: 1 / -1;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #ee5a52;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .success-screen {
+            display: none;
+            text-align: center;
+        }
+
+        .success-screen.show {
+            display: block;
+        }
+
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .success-icon.in {
+            color: #51cf66;
+        }
+
+        .success-icon.out {
+            color: #ff6b6b;
+        }
+
+        .employee-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .action-text {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .action-text.in {
+            color: #51cf66;
+        }
+
+        .action-text.out {
+            color: #ff6b6b;
+        }
+
+        .time-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .time-info p {
+            margin: 10px 0;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .hours-worked {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="pin-entry">
+            <h1>Welcome!</h1>
+            <p class="subtitle">Enter your PIN to clock in or out</p>
+
+            <div class="error-message" id="error-message"></div>
+
+            <div class="pin-display" id="pin-display">
+                <span id="pin-dots"></span>
+            </div>
+
+            <div class="keypad">
+                <button class="key" onclick="addDigit('1')">1</button>
+                <button class="key" onclick="addDigit('2')">2</button>
+                <button class="key" onclick="addDigit('3')">3</button>
+                <button class="key" onclick="addDigit('4')">4</button>
+                <button class="key" onclick="addDigit('5')">5</button>
+                <button class="key" onclick="addDigit('6')">6</button>
+                <button class="key" onclick="addDigit('7')">7</button>
+                <button class="key" onclick="addDigit('8')">8</button>
+                <button class="key" onclick="addDigit('9')">9</button>
+                <button class="key" onclick="clearPin()">Clear</button>
+                <button class="key" onclick="addDigit('0')">0</button>
+                <button class="key" onclick="backspace()">⌫</button>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="submitPin()">Clock In/Out</button>
+            </div>
+        </div>
+
+        <div class="success-screen" id="success-screen">
+            <div class="success-icon" id="success-icon">✓</div>
+            <div class="employee-name" id="employee-name"></div>
+            <div class="action-text" id="action-text"></div>
+            <div class="time-info">
+                <p><strong>Time:</strong> <span id="timestamp"></span></p>
+                <p><strong>Date:</strong> <span id="date"></span></p>
+                <div id="hours-container" style="display: none;">
+                    <p><strong>Today's Hours:</strong></p>
+                    <div class="hours-worked" id="hours-worked"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pin = '';
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function addDigit(digit) {
+            if (pin.length < 6) {
+                pin += digit;
+                updateDisplay();
+            }
+        }
+
+        function backspace() {
+            pin = pin.slice(0, -1);
+            updateDisplay();
+        }
+
+        function clearPin() {
+            pin = '';
+            updateDisplay();
+            hideError();
+        }
+
+        function updateDisplay() {
+            const display = document.getElementById('pin-dots');
+            display.textContent = '•'.repeat(pin.length);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+        }
+
+        function hideError() {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.classList.remove('show');
+        }
+
+        function submitPin() {
+            if (pin.length === 0) {
+                showError('Please enter your PIN');
+                return;
+            }
+
+            hideError();
+
+            const csrftoken = getCookie('csrftoken');
+
+            fetch('/clock/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken
+                },
+                body: `pin=${pin}`
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showSuccess(data);
+                } else {
+                    showError(data.error);
+                    pin = '';
+                    updateDisplay();
+                }
+            })
+            .catch(error => {
+                showError('An error occurred. Please try again.');
+                console.error('Fetch error:', error);
+            });
+        }
+
+        function showSuccess(data) {
+            // Hide PIN entry
+            document.getElementById('pin-entry').style.display = 'none';
+
+            // Show success screen
+            const successScreen = document.getElementById('success-screen');
+            const icon = document.getElementById('success-icon');
+            const actionText = document.getElementById('action-text');
+
+            if (data.action === 'IN') {
+                icon.textContent = '✓';
+                icon.className = 'success-icon in';
+                actionText.textContent = 'Clocked IN';
+                actionText.className = 'action-text in';
+                document.getElementById('hours-container').style.display = 'none';
+            } else {
+                icon.textContent = '✓';
+                icon.className = 'success-icon out';
+                actionText.textContent = 'Clocked OUT';
+                actionText.className = 'action-text out';
+                document.getElementById('hours-container').style.display = 'block';
+                document.getElementById('hours-worked').textContent = data.hours_worked + ' hours';
+            }
+
+            document.getElementById('employee-name').textContent = data.employee_name;
+            document.getElementById('timestamp').textContent = data.timestamp;
+            document.getElementById('date').textContent = data.date;
+
+            successScreen.classList.add('show');
+
+            // Auto-redirect after 3 seconds
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        }
+
+        // Allow Enter key to submit
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitPin();
+            }
+        });
+
+        // Allow numeric keypad
+        document.addEventListener('keydown', (e) => {
+            if (e.key >= '0' && e.key <= '9') {
+                addDigit(e.key);
+            } else if (e.key === 'Backspace') {
+                backspace();
+            } else if (e.key === 'Escape') {
+                clearPin();
+            }
+        });
+    </script>
+</body>
+</html>
