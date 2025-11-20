@@ -32,6 +32,9 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv(
 # Application definition
 
 INSTALLED_APPS = [
+    'unfold',  # Must be before django.contrib.admin
+    'unfold.contrib.filters',  # Optional, Unfold admin filters
+    'unfold.contrib.forms',  # Optional, Unfold admin forms
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -153,3 +156,150 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@attendance.co
 # Static files
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# Django Unfold Configuration
+from django.templatetags.static import static
+from django.urls import reverse_lazy
+from django.utils.translation import gettext_lazy as _
+
+UNFOLD = {
+    "SITE_TITLE": "Attendance System",
+    "SITE_HEADER": "Employee Attendance Management",
+    "SITE_URL": "/",
+    "SITE_ICON": lambda request: static("icon.svg"),  # Optional site icon
+    "SITE_LOGO": None,  # Optional site logo
+    "SITE_SYMBOL": "schedule",  # Material icon name for logo
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "ENVIRONMENT": "attendance_system.settings.environment_callback",
+    "DASHBOARD_CALLBACK": "attendance_system.settings.dashboard_callback",
+    "THEME": "auto",  # auto, light, dark
+    "COLORS": {
+        "primary": {
+            "50": "250 245 255",
+            "100": "243 232 255",
+            "200": "233 213 255",
+            "300": "216 180 254",
+            "400": "192 132 252",
+            "500": "168 85 247",
+            "600": "147 51 234",
+            "700": "126 34 206",
+            "800": "107 33 168",
+            "900": "88 28 135",
+            "950": "59 7 100",
+        },
+    },
+    "EXTENSIONS": {
+        "modeltranslation": {
+            "flags": {
+                "en": "🇬🇧",
+                "fr": "🇫🇷",
+                "nl": "🇧🇪",
+            },
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+        "navigation": [
+            {
+                "title": _("Navigation"),
+                "separator": True,
+                "items": [
+                    {
+                        "title": _("Dashboard"),
+                        "icon": "dashboard",
+                        "link": reverse_lazy("admin:index"),
+                    },
+                ],
+            },
+            {
+                "title": _("Attendance Management"),
+                "separator": True,
+                "items": [
+                    {
+                        "title": _("Employees"),
+                        "icon": "people",
+                        "link": reverse_lazy("admin:attendance_employeeregistry_changelist"),
+                    },
+                    {
+                        "title": _("Attendance Taps"),
+                        "icon": "touch_app",
+                        "link": reverse_lazy("admin:attendance_attendancetap_changelist"),
+                    },
+                    {
+                        "title": _("Daily Summaries"),
+                        "icon": "summarize",
+                        "link": reverse_lazy("admin:attendance_dailysummary_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": _("Reports & Logs"),
+                "separator": True,
+                "items": [
+                    {
+                        "title": _("Timesheet Edits"),
+                        "icon": "edit_note",
+                        "link": reverse_lazy("admin:attendance_timesheetedit_changelist"),
+                    },
+                    {
+                        "title": _("Email Logs"),
+                        "icon": "email",
+                        "link": reverse_lazy("admin:attendance_emaillog_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": _("System"),
+                "separator": True,
+                "items": [
+                    {
+                        "title": _("Settings"),
+                        "icon": "settings",
+                        "link": reverse_lazy("admin:attendance_systemsettings_changelist"),
+                    },
+                    {
+                        "title": _("Scheduled Tasks"),
+                        "icon": "schedule",
+                        "link": reverse_lazy("admin:django_celery_beat_periodictask_changelist"),
+                    },
+                ],
+            },
+        ],
+    },
+}
+
+
+def environment_callback(request):
+    """Show environment badge in admin"""
+    return ["Development" if config('DEBUG', default=True, cast=bool) else "Production", "info"]
+
+
+def dashboard_callback(request, context):
+    """Custom dashboard callback"""
+    context.update({
+        "navigation": [
+            {
+                "title": "Quick Actions",
+                "items": [
+                    {
+                        "title": "Add Employee",
+                        "icon": "person_add",
+                        "link": reverse_lazy("admin:attendance_employeeregistry_add"),
+                    },
+                    {
+                        "title": "View Dashboard",
+                        "icon": "dashboard",
+                        "link": "/admin/dashboard/",
+                    },
+                    {
+                        "title": "Employee Clock In/Out",
+                        "icon": "schedule",
+                        "link": "/",
+                    },
+                ],
+            },
+        ],
+    })
+    return context

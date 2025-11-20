@@ -10,6 +10,7 @@ cron_descriptor==2.0.6
 Django==5.2.8
 django-celery-beat==2.8.1
 django-timezone-field==7.1
+django-unfold==0.71.0
 gunicorn==23.0.0
 kombu==5.5.4
 mysqlclient==2.2.7
