@@ -174,12 +174,18 @@ from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
 
 UNFOLD = {
-    "SITE_TITLE": "Attendance System",
-    "SITE_HEADER": "Employee Attendance Management",
+    "SITE_TITLE": "Digital Cinema Attendance",
+    "SITE_HEADER": "Digital Cinema - Employee Attendance",
     "SITE_URL": "/",
-    "SITE_ICON": lambda request: static("icon.svg"),  # Optional site icon
-    "SITE_LOGO": None,  # Optional site logo
-    "SITE_SYMBOL": "schedule",  # Material icon name for logo
+    "SITE_ICON": {
+        "light": lambda request: "https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png",
+        "dark": lambda request: "https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png",
+    },
+    "SITE_LOGO": {
+        "light": lambda request: "https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png",
+        "dark": lambda request: "https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png",
+    },
+    "SITE_SYMBOL": "schedule",  # Material icon name for logo fallback
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
     "ENVIRONMENT": "attendance_system.settings.environment_callback",
