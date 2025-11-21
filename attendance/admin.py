@@ -27,7 +27,7 @@ class AttendanceTapAdmin(ModelAdmin):
     list_filter = ['action', 'timestamp']
     search_fields = ['employee_id', 'employee_name']
     readonly_fields = ['timestamp', 'created_at']
-    date_hierarchy = 'timestamp'
+    # date_hierarchy = 'timestamp'  # Disabled - requires MySQL timezone tables
     list_filter_submit = True
 
     @display(description="Action", label=True)
@@ -41,7 +41,7 @@ class DailySummaryAdmin(ModelAdmin):
                     'show_final_hours', 'show_status', 'tap_count']
     list_filter = ['date', 'current_status']
     search_fields = ['employee_id', 'employee_name']
-    date_hierarchy = 'date'
+    # date_hierarchy = 'date'  # Disabled - requires MySQL timezone tables
     list_filter_submit = True
 
     @display(description="Hours Worked", label=False)
@@ -70,7 +70,7 @@ class EmailLogAdmin(ModelAdmin):
     list_filter = ['status', 'email_type', 'timestamp']
     search_fields = ['recipient', 'employee_id']
     readonly_fields = ['timestamp']
-    date_hierarchy = 'timestamp'
+    # date_hierarchy = 'timestamp'  # Disabled - requires MySQL timezone tables
     list_filter_submit = True
 
     @display(description="Status", label=True)
