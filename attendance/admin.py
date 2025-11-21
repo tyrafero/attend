@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
+from unfold.contrib.filters.admin import RangeDateFilter, RangeDateTimeFilter
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
     TimesheetEdit, EmailLog, SystemSettings
@@ -24,7 +25,10 @@ class EmployeeRegistryAdmin(ModelAdmin):
 @admin.register(AttendanceTap)
 class AttendanceTapAdmin(ModelAdmin):
     list_display = ['employee_name', 'employee_id', 'show_action', 'timestamp']
-    list_filter = ['action', 'timestamp']
+    list_filter = [
+        'action',
+        ('timestamp', RangeDateTimeFilter),  # Date/time range filter
+    ]
     search_fields = ['employee_id', 'employee_name']
     readonly_fields = ['timestamp', 'created_at']
     # date_hierarchy = 'timestamp'  # Disabled - requires MySQL timezone tables
@@ -39,7 +43,10 @@ class AttendanceTapAdmin(ModelAdmin):
 class DailySummaryAdmin(ModelAdmin):
     list_display = ['employee_name', 'date', 'first_clock_in', 'last_clock_out',
                     'show_final_hours', 'show_status', 'tap_count']
-    list_filter = ['date', 'current_status']
+    list_filter = [
+        ('date', RangeDateFilter),  # Date range filter
+        'current_status',
+    ]
     search_fields = ['employee_id', 'employee_name']
     # date_hierarchy = 'date'  # Disabled - requires MySQL timezone tables
     list_filter_submit = True
@@ -58,7 +65,10 @@ class DailySummaryAdmin(ModelAdmin):
 @admin.register(TimesheetEdit)
 class TimesheetEditAdmin(ModelAdmin):
     list_display = ['employee_name', 'date', 'field_changed', 'edited_by', 'edited_at']
-    list_filter = ['edited_at', 'field_changed']
+    list_filter = [
+        ('edited_at', RangeDateTimeFilter),  # Date/time range filter
+        'field_changed',
+    ]
     search_fields = ['employee_id', 'employee_name']
     readonly_fields = ['edited_at']
     list_filter_submit = True
@@ -67,7 +77,11 @@ class TimesheetEditAdmin(ModelAdmin):
 @admin.register(EmailLog)
 class EmailLogAdmin(ModelAdmin):
     list_display = ['email_type', 'recipient', 'employee_id', 'show_status', 'timestamp']
-    list_filter = ['status', 'email_type', 'timestamp']
+    list_filter = [
+        'status',
+        'email_type',
+        ('timestamp', RangeDateTimeFilter),  # Date/time range filter
+    ]
     search_fields = ['recipient', 'employee_id']
     readonly_fields = ['timestamp']
     # date_hierarchy = 'timestamp'  # Disabled - requires MySQL timezone tables
