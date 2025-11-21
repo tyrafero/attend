@@ -6,6 +6,7 @@ from django.db.models import Sum, Count, Q
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 import pytz
+import json
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
     TimesheetEdit, EmailLog
@@ -131,7 +132,11 @@ def clock_action(request):
 def admin_dashboard(request):
     """Main admin dashboard with stats and employee list"""
     sydney_tz = pytz.timezone('Australia/Sydney')
-    today = timezone.now().astimezone(sydney_tz).date()
+    now = timezone.now().astimezone(sydney_tz)
+    today = now.date()
+
+    # Get week range (last 7 days)
+    week_start = today - timedelta(days=6)
 
     # Get statistics
     total_employees = EmployeeRegistry.objects.filter(is_active=True).count()
@@ -145,6 +150,37 @@ def admin_dashboard(request):
     total_hours = today_summaries.aggregate(
         total=Sum('final_hours')
     )['total'] or Decimal('0')
+
+    # Calculate week's total hours
+    week_summaries = DailySummary.objects.filter(date__gte=week_start, date__lte=today)
+    week_hours = week_summaries.aggregate(
+        total=Sum('final_hours')
+    )['total'] or Decimal('0')
+
+    # Average hours per day this week
+    days_worked = week_summaries.values('date').distinct().count()
+    avg_hours = (week_hours / days_worked) if days_worked > 0 else Decimal('0')
+
+    # Get recent taps (last 10)
+    recent_taps = AttendanceTap.objects.select_related().order_by('-timestamp')[:10]
+
+    # Get employees who haven't clocked in today
+    clocked_in_ids = today_summaries.values_list('employee_id', flat=True)
+    not_clocked_in = EmployeeRegistry.objects.filter(
+        is_active=True
+    ).exclude(employee_id__in=clocked_in_ids).count()
+
+    # Weekly chart data (last 7 days)
+    chart_data = []
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        day_hours = DailySummary.objects.filter(date=day).aggregate(
+            total=Sum('final_hours')
+        )['total'] or Decimal('0')
+        chart_data.append({
+            'date': day.strftime('%a'),  # Mon, Tue, etc
+            'hours': float(day_hours)
+        })
 
     # Get all employees with their current status
     employees = EmployeeRegistry.objects.filter(is_active=True).order_by('employee_name')
@@ -170,8 +206,14 @@ def admin_dashboard(request):
         'currently_in': currently_in,
         'currently_out': currently_out,
         'total_hours': total_hours,
+        'week_hours': week_hours,
+        'avg_hours': avg_hours,
+        'not_clocked_in': not_clocked_in,
         'employees': employee_list,
+        'recent_taps': recent_taps,
+        'chart_data': json.dumps(chart_data),  # Convert to JSON for JavaScript
         'today': today,
+        'current_time': now.strftime('%I:%M %p'),
     }
 
     return render(request, 'attendance/admin_dashboard.html', context)
