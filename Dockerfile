@@ -26,12 +26,11 @@ COPY . /app/
 # Create static directory
 RUN mkdir -p /app/static /app/staticfiles
 
-# Collect static files
-RUN python manage.py collectstatic --noinput || true
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.sh
 
 # Expose port
 EXPOSE 8000
 
-# Run migrations and start server
-CMD python manage.py migrate && \
-    gunicorn attendance_system.wsgi:application --bind 0.0.0.0:8000 --workers 3
+# Run entrypoint script
+CMD ["/app/entrypoint.sh"]
