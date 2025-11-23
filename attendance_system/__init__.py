@@ -1,10 +1,15 @@
-# This will make sure the app is always imported when
-# Django starts so that shared_task will use this app.
-# Make Celery import optional to allow web service to run without Redis
-try:
-    from .celery import app as celery_app
-    __all__ = ('celery_app',)
-except Exception as e:
-    print(f"Warning: Celery not available: {e}")
+import os
+
+# Only import Celery if we're running Celery workers, not the web service
+if os.environ.get('CELERY_WORKER', 'false').lower() == 'true':
+    try:
+        from .celery import app as celery_app
+        __all__ = ('celery_app',)
+    except Exception as e:
+        print(f"Warning: Celery not available: {e}")
+        celery_app = None
+        __all__ = ()
+else:
+    # Skip Celery for web service
     celery_app = None
     __all__ = ()
