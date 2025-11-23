@@ -38,12 +38,18 @@ END
 echo "Running migrations..."
 python manage.py migrate --noinput || echo "Migrations failed, continuing..."
 
+# Test Django import first to catch errors early
+echo "Testing Django import..."
+python -c "import django; django.setup(); print('Django imported successfully')" || echo "Django import failed!"
+
 # Start Gunicorn - this is the critical part that must succeed
 echo "Starting Gunicorn on port ${PORT:-8000}..."
 exec gunicorn attendance_system.wsgi:application \
     --bind 0.0.0.0:${PORT:-8000} \
     --workers 3 \
     --timeout 120 \
-    --log-level info \
+    --log-level debug \
+    --capture-output \
+    --enable-stdio-inheritance \
     --access-logfile - \
     --error-logfile -

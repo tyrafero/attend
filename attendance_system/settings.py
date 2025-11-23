@@ -136,25 +136,28 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Celery Configuration
-CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = config('TIME_ZONE', default='Australia/Sydney')
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+# Celery Configuration (optional - allows app to run without Redis)
+try:
+    CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+    CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
+    CELERY_ACCEPT_CONTENT = ['json']
+    CELERY_TASK_SERIALIZER = 'json'
+    CELERY_RESULT_SERIALIZER = 'json'
+    CELERY_TIMEZONE = config('TIME_ZONE', default='Australia/Sydney')
+    CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
-# Celery Production Settings
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_BROKER_POOL_LIMIT = 10  # Limit Redis connections
-CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Only fetch one task at a time
-CELERY_TASK_REJECT_ON_WORKER_LOST = True
+    # Celery Production Settings
+    CELERY_TASK_TRACK_STARTED = True
+    CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+    CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+    CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks
+    CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+    CELERY_BROKER_POOL_LIMIT = 10  # Limit Redis connections
+    CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion
+    CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Only fetch one task at a time
+    CELERY_TASK_REJECT_ON_WORKER_LOST = True
+except Exception as e:
+    print(f"Warning: Celery configuration skipped: {e}")
 
 # Email Configuration
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
