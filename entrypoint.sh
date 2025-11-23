@@ -1,55 +1,33 @@
 #!/bin/bash
 
-# Don't exit on error - let Django handle database issues
-set +e
+# Enable verbose debugging - show every command
+set -x
 
-echo "Starting deployment..."
+echo "=== STARTING DEPLOYMENT ==="
 
-# Quick database check (max 5 seconds)
-echo "Checking database connection..."
-python << END
-import sys
-import time
-from decouple import config
+# Show environment info
+echo "PORT is: $PORT"
+echo "Python version:"
+python --version
 
-max_retries = 5
-for i in range(max_retries):
-    try:
-        import MySQLdb
-        conn = MySQLdb.connect(
-            host=config('DB_HOST', default='localhost'),
-            port=int(config('DB_PORT', default='3306')),
-            user=config('DB_USER', default='root'),
-            passwd=config('DB_PASSWORD', default=''),
-            db=config('DB_NAME', default='attendance_db')
-        )
-        conn.close()
-        print("Database ready!")
-        sys.exit(0)
-    except Exception as e:
-        if i < max_retries - 1:
-            time.sleep(1)
-        else:
-            print(f"Database check failed, continuing anyway: {e}")
-            sys.exit(0)
-END
+echo "=== CHECKING GUNICORN ==="
+which gunicorn
+gunicorn --version
 
-# Run migrations (continue even if they fail)
-echo "Running migrations..."
-python manage.py migrate --noinput || echo "Migrations failed, continuing..."
+echo "=== RUNNING MIGRATIONS ==="
+python manage.py migrate --noinput
+echo "=== MIGRATIONS COMPLETE ==="
 
-# Test Django import first to catch errors early
-echo "Testing Django import..."
-python -c "import django; django.setup(); print('Django imported successfully')" || echo "Django import failed!"
+echo "=== TESTING DJANGO IMPORT ==="
+python -c "import django; print('Django version:', django.get_version()); from django.conf import settings; django.setup(); print('Django setup complete')"
+echo "=== DJANGO IMPORT SUCCESSFUL ==="
 
-# Start Gunicorn - this is the critical part that must succeed
-echo "Starting Gunicorn on port ${PORT:-8000}..."
+echo "=== STARTING GUNICORN ON PORT $PORT ==="
 exec gunicorn attendance_system.wsgi:application \
-    --bind 0.0.0.0:${PORT:-8000} \
+    --bind 0.0.0.0:$PORT \
     --workers 3 \
     --timeout 120 \
-    --log-level debug \
-    --capture-output \
-    --enable-stdio-inheritance \
     --access-logfile - \
-    --error-logfile -
+    --error-logfile - \
+    --log-level info \
+    2>&1
