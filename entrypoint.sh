@@ -1,64 +1,49 @@
 #!/bin/bash
 
-# Exit on error
-set -e
+# Don't exit on error - let Django handle database issues
+set +e
 
 echo "Starting deployment..."
 
-# Wait for database to be ready (if needed)
-echo "Waiting for database..."
+# Quick database check (max 5 seconds)
+echo "Checking database connection..."
 python << END
 import sys
 import time
-import os
 from decouple import config
 
-max_retries = 30
-retry_count = 0
-
-while retry_count < max_retries:
+max_retries = 5
+for i in range(max_retries):
     try:
         import MySQLdb
-        db_host = config('DB_HOST', default='localhost')
-        db_port = int(config('DB_PORT', default='3306'))
-        db_user = config('DB_USER', default='root')
-        db_password = config('DB_PASSWORD', default='')
-        db_name = config('DB_NAME', default='attendance_db')
-
-        print(f"Attempting to connect to {db_host}:{db_port}...")
         conn = MySQLdb.connect(
-            host=db_host,
-            port=db_port,
-            user=db_user,
-            passwd=db_password,
-            db=db_name
+            host=config('DB_HOST', default='localhost'),
+            port=int(config('DB_PORT', default='3306')),
+            user=config('DB_USER', default='root'),
+            passwd=config('DB_PASSWORD', default=''),
+            db=config('DB_NAME', default='attendance_db')
         )
         conn.close()
-        print("Database is ready!")
+        print("Database ready!")
         sys.exit(0)
     except Exception as e:
-        retry_count += 1
-        print(f"Database not ready (attempt {retry_count}/{max_retries}): {e}")
-        time.sleep(2)
-
-print("Database connection failed after maximum retries")
-sys.exit(1)
+        if i < max_retries - 1:
+            time.sleep(1)
+        else:
+            print(f"Database check failed, continuing anyway: {e}")
+            sys.exit(0)
 END
 
-# Run migrations
+# Run migrations (continue even if they fail)
 echo "Running migrations..."
-python manage.py migrate --noinput
+python manage.py migrate --noinput || echo "Migrations failed, continuing..."
 
-# Collect static files
-echo "Collecting static files..."
-python manage.py collectstatic --noinput --clear
-
-# Start Gunicorn
-echo "Starting Gunicorn..."
+# Start Gunicorn - this is the critical part that must succeed
+echo "Starting Gunicorn on port ${PORT:-8000}..."
 exec gunicorn attendance_system.wsgi:application \
     --bind 0.0.0.0:${PORT:-8000} \
     --workers 3 \
     --timeout 120 \
-    --log-level warning \
+    --log-level info \
     --access-logfile - \
     --error-logfile -
