@@ -241,7 +241,7 @@
 </head>
 <body>
     <!-- Hidden CSRF token for mobile compatibility -->
-    <input type="hidden" id="csrf-token" value="{% csrf_token %}">
+    <input type="hidden" id="csrf-token" value="{{ csrf_token }}">
 
     <div class="container">
         <div id="pin-entry">
@@ -298,14 +298,13 @@
         function getCSRFToken() {
             // Try getting from hidden input first (mobile-friendly)
             const hiddenInput = document.getElementById('csrf-token');
-            if (hiddenInput && hiddenInput.value) {
-                // Remove "csrfmiddlewaretoken" wrapper if present
-                const value = hiddenInput.value.replace(/<[^>]*>/g, '').trim();
-                const match = value.match(/value=['"]([^'"]+)['"]/);
-                return match ? match[1] : value;
+            if (hiddenInput && hiddenInput.value && hiddenInput.value !== '') {
+                console.log('Using CSRF token from hidden input');
+                return hiddenInput.value;
             }
 
             // Fallback to cookie method
+            console.log('Using CSRF token from cookie');
             return getCookie('csrftoken');
         }
 
