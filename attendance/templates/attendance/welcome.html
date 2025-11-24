@@ -1,8 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Employee Attendance - Digital Cinema</title>
     <link rel="icon" type="image/png" href="https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png">
     <link rel="shortcut icon" type="image/png" href="https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png">
@@ -29,6 +32,39 @@
             padding: 40px;
             max-width: 500px;
             width: 90%;
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                width: 95%;
+                border-radius: 15px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .subtitle {
+                font-size: 14px;
+            }
+
+            .key {
+                padding: 20px;
+                font-size: 20px;
+            }
+
+            .pin-display {
+                font-size: 20px;
+                padding: 15px;
+                min-height: 50px;
+            }
+
+            .btn {
+                padding: 15px;
+                font-size: 16px;
+            }
         }
 
         h1 {
@@ -204,6 +240,9 @@
     </style>
 </head>
 <body>
+    <!-- Hidden CSRF token for mobile compatibility -->
+    <input type="hidden" id="csrf-token" value="{% csrf_token %}">
+
     <div class="container">
         <div id="pin-entry">
             <div style="text-align: center; margin-bottom: 30px;">
@@ -255,6 +294,20 @@
 
     <script>
         let pin = '';
+
+        function getCSRFToken() {
+            // Try getting from hidden input first (mobile-friendly)
+            const hiddenInput = document.getElementById('csrf-token');
+            if (hiddenInput && hiddenInput.value) {
+                // Remove "csrfmiddlewaretoken" wrapper if present
+                const value = hiddenInput.value.replace(/<[^>]*>/g, '').trim();
+                const match = value.match(/value=['"]([^'"]+)['"]/);
+                return match ? match[1] : value;
+            }
+
+            // Fallback to cookie method
+            return getCookie('csrftoken');
+        }
 
         function getCookie(name) {
             let cookieValue = null;
@@ -313,7 +366,8 @@
 
             hideError();
 
-            const csrftoken = getCookie('csrftoken');
+            const csrftoken = getCSRFToken();
+            console.log('CSRF Token:', csrftoken ? 'Found' : 'NOT FOUND');
 
             fetch('/clock/', {
                 method: 'POST',
