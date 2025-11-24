@@ -29,6 +29,13 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,*.railway.app', cast=Csv())
 
+# CSRF Trusted Origins (required for Railway deployment)
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='https://web-production-5d1e4.up.railway.app',
+    cast=Csv()
+)
+
 
 # Application definition
 
