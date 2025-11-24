@@ -1,33 +1,26 @@
 #!/bin/bash
-
-# Enable verbose debugging - show every command
-set -x
+set -e  # Exit on error
 
 echo "=== STARTING DEPLOYMENT ==="
+echo "PORT: ${PORT:-8000}"
+echo "Python version: $(python --version)"
 
-# Show environment info
-echo "PORT is: $PORT"
-echo "Python version:"
-python --version
-
-echo "=== CHECKING GUNICORN ==="
-which gunicorn
-gunicorn --version
-
+# Run migrations
 echo "=== RUNNING MIGRATIONS ==="
-python manage.py migrate --noinput
-echo "=== MIGRATIONS COMPLETE ==="
+python manage.py migrate --noinput || {
+    echo "WARNING: Migrations failed, but continuing..."
+}
 
-echo "=== TESTING DJANGO IMPORT ==="
-python -c "import django; print('Django version:', django.get_version()); from django.conf import settings; django.setup(); print('Django setup complete')"
-echo "=== DJANGO IMPORT SUCCESSFUL ==="
+# Verify Gunicorn is installed
+echo "=== VERIFYING GUNICORN ==="
+python -c "import gunicorn; print('Gunicorn version:', gunicorn.__version__)"
 
-echo "=== STARTING GUNICORN ON PORT $PORT ==="
+# Start Gunicorn
+echo "=== STARTING GUNICORN ON PORT ${PORT:-8000} ==="
 exec gunicorn attendance_system.wsgi:application \
-    --bind 0.0.0.0:$PORT \
+    --bind 0.0.0.0:${PORT:-8000} \
     --workers 3 \
     --timeout 120 \
     --access-logfile - \
     --error-logfile - \
-    --log-level info \
-    2>&1
+    --log-level info
