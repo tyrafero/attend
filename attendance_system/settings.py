@@ -36,6 +36,14 @@ CSRF_TRUSTED_ORIGINS = config(
     cast=Csv()
 )
 
+# Cookie settings for mobile compatibility
+CSRF_COOKIE_SAMESITE = 'Lax'  # Allow cookies from same site (mobile compatible)
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
+CSRF_COOKIE_SECURE = not DEBUG  # Only require HTTPS in production
+SESSION_COOKIE_SAMESITE = 'Lax'  # Allow session cookies on mobile
+SESSION_COOKIE_SECURE = not DEBUG  # Only require HTTPS in production
+CSRF_USE_SESSIONS = False  # Use cookie-based CSRF tokens (better for mobile)
+
 
 # Application definition
 
