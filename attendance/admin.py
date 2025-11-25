@@ -66,9 +66,48 @@ class DailySummaryAdmin(ModelAdmin):
         ('date', RangeDateFilter),  # Date range filter
         'current_status',
     ]
-    search_fields = ['employee_id', 'employee_name']
+    search_fields = ['employee_id', 'employee_name', 'selected_employee__employee_name', 'selected_employee__employee_id']
     # date_hierarchy = 'date'  # Disabled - requires MySQL timezone tables
     list_filter_submit = True
+    autocomplete_fields = ['selected_employee']  # Enable autocomplete for employee field
+
+    # Fields shown when editing existing records
+    fieldsets = (
+        ('Employee Information', {
+            'fields': ('selected_employee', 'employee_id', 'employee_name', 'date'),
+            'description': 'Employee ID and Name are auto-populated from selected employee'
+        }),
+        ('Time Records', {
+            'fields': ('first_clock_in', 'last_clock_out', 'current_status')
+        }),
+        ('Hours Calculation', {
+            'fields': ('raw_hours', 'break_deduction', 'final_hours'),
+            'description': 'Hours worked and break deductions'
+        }),
+        ('Metadata', {
+            'fields': ('tap_count',),
+        }),
+    )
+
+    # Simplified fields shown when adding new records
+    add_fieldsets = (
+        ('Employee Information', {
+            'fields': ('date', 'selected_employee'),
+            'description': 'Select employee from dropdown'
+        }),
+        ('Time Records', {
+            'fields': ('first_clock_in', 'last_clock_out'),
+            'description': 'Last clock out is optional'
+        }),
+    )
+
+    readonly_fields = ['employee_id', 'employee_name']  # These are auto-populated
+
+    def get_fieldsets(self, request, obj=None):
+        """Use different fieldsets for add vs edit"""
+        if not obj:  # Adding new record
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
 
     @display(description="Hours Worked", label=False)
     def show_final_hours(self, obj):

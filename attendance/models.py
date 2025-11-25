@@ -54,6 +54,18 @@ class DailySummary(models.Model):
         ('OUT', 'Clocked Out'),
     ]
 
+    # ForeignKey for easy dropdown selection in admin
+    selected_employee = models.ForeignKey(
+        EmployeeRegistry,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='daily_summaries',
+        help_text='Select employee from dropdown',
+        verbose_name='Employee'
+    )
+
+    # Keep these fields for backward compatibility and denormalized access
     date = models.DateField()
     employee_id = models.CharField(max_length=50)
     employee_name = models.CharField(max_length=200)
@@ -70,6 +82,13 @@ class DailySummary(models.Model):
         verbose_name_plural = 'Daily Summaries'
         unique_together = ['date', 'employee_id']
         ordering = ['-date', 'employee_name']
+
+    def save(self, *args, **kwargs):
+        # Auto-populate employee_id and employee_name from ForeignKey if set
+        if self.selected_employee:
+            self.employee_id = self.selected_employee.employee_id
+            self.employee_name = self.selected_employee.employee_name
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.employee_name} - {self.date} ({self.final_hours}h)"
