@@ -1,0 +1,21 @@
+[Unit]
+Description=Celery Worker for Attendance System
+After=network.target redis.service
+
+[Service]
+Type=forking
+User=vboxuser
+Group=vboxuser
+WorkingDirectory=/home/vboxuser/Documents/attend
+Environment="PATH=/home/vboxuser/Documents/attend/env/bin"
+ExecStart=/home/vboxuser/Documents/attend/env/bin/celery -A attendance_system worker \
+    --detach \
+    --logfile=/home/vboxuser/Documents/attend/logs/celery-worker.log \
+    --loglevel=info \
+    --pidfile=/home/vboxuser/Documents/attend/logs/celery-worker.pid
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=no
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

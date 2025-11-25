@@ -1,0 +1,8 @@
+[Unit]
+Description=Start Celery Services for Attendance System
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl start celery-worker.service
+ExecStartPost=/bin/systemctl start celery-beat.service
+RemainAfterExit=no

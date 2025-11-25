@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop Celery Services at 6 PM Daily
+
+[Timer]
+OnCalendar=*-*-* 18:00:00
+Persistent=true
+Unit=celery-stop.service
+
+[Install]
+WantedBy=timers.target

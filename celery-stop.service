@@ -1,0 +1,8 @@
+[Unit]
+Description=Stop Celery Services for Attendance System
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop celery-beat.service
+ExecStartPost=/bin/systemctl stop celery-worker.service
+RemainAfterExit=no

@@ -1,0 +1,22 @@
+[Unit]
+Description=Celery Beat Scheduler for Attendance System
+After=network.target redis.service celery-worker.service
+
+[Service]
+Type=forking
+User=vboxuser
+Group=vboxuser
+WorkingDirectory=/home/vboxuser/Documents/attend
+Environment="PATH=/home/vboxuser/Documents/attend/env/bin"
+ExecStart=/home/vboxuser/Documents/attend/env/bin/celery -A attendance_system beat \
+    --detach \
+    --logfile=/home/vboxuser/Documents/attend/logs/celery-beat.log \
+    --loglevel=info \
+    --pidfile=/home/vboxuser/Documents/attend/logs/celery-beat.pid \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=no
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

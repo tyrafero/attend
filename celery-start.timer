@@ -1,0 +1,10 @@
+[Unit]
+Description=Start Celery Services at 5 AM Daily
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+Unit=celery-start.service
+
+[Install]
+WantedBy=timers.target
