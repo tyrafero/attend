@@ -458,9 +458,9 @@
 
             successScreen.classList.add('show');
 
-            // Auto-redirect after 3 seconds
+            // Auto-redirect after 3 seconds to clean URL (remove employee_id parameter)
             setTimeout(() => {
-                location.reload();
+                window.location.href = '/';
             }, 3000);
         }
 
