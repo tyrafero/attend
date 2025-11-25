@@ -9,7 +9,7 @@ import pytz
 import json
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
-    TimesheetEdit, EmailLog
+    TimesheetEdit, EmailLog, SystemSettings
 )
 
 
@@ -40,11 +40,20 @@ def clock_action(request):
     current_time = now.time()
     today = now.date()
 
-    # Check if within allowed time (7 AM - 5 PM)
-    if not (time(7, 0) <= current_time <= time(17, 0)):
+    # Load system settings
+    settings = SystemSettings.load()
+
+    # Check if within allowed time (before office end time)
+    if current_time >= settings.office_end_time:
         return JsonResponse({
             'success': False,
-            'error': 'Clock in/out only allowed between 7 AM and 5 PM'
+            'error': f'Clock in/out not allowed after {settings.office_end_time.strftime("%I:%M %p")}'
+        })
+
+    if current_time < settings.office_start_time:
+        return JsonResponse({
+            'success': False,
+            'error': f'Clock in/out not allowed before {settings.office_start_time.strftime("%I:%M %p")}'
         })
 
     # Get or create daily summary
@@ -89,26 +98,25 @@ def clock_action(request):
             raw_hours = Decimal(time_diff.total_seconds() / 3600)
             daily_summary.raw_hours = raw_hours
 
-            # Apply break deduction if > 5 hours
+            # Apply break deduction if > 5 hours (use system settings)
             if raw_hours > 5:
-                daily_summary.break_deduction = Decimal('0.5')  # 30 minutes
+                daily_summary.break_deduction = settings.break_duration_hours
             else:
                 daily_summary.break_deduction = Decimal('0')
 
             daily_summary.final_hours = daily_summary.raw_hours - daily_summary.break_deduction
 
-            # Check for early clock-out (less than 8 hours)
-            # Disabled for now - uncomment to enable early clock-out email alerts
-            # if daily_summary.final_hours < 8:
-            #     try:
-            #         from .tasks import send_early_clockout_alert
-            #         send_early_clockout_alert.delay(
-            #             employee.employee_id,
-            #             str(daily_summary.final_hours)
-            #         )
-            #     except Exception as e:
-            #         # Log error but don't block clock-out
-            #         print(f"Failed to send early clock-out alert: {e}")
+            # Check for early clock-out if enabled in settings
+            if settings.enable_early_clockout_alerts and daily_summary.final_hours < settings.required_shift_hours:
+                try:
+                    from .tasks import send_early_clockout_alert
+                    send_early_clockout_alert.delay(
+                        employee.employee_id,
+                        str(daily_summary.final_hours)
+                    )
+                except Exception as e:
+                    # Log error but don't block clock-out
+                    print(f"Failed to send early clock-out alert: {e}")
 
     daily_summary.save()
 

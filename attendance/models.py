@@ -112,13 +112,73 @@ class EmailLog(models.Model):
 
 
 class SystemSettings(models.Model):
-    key = models.CharField(max_length=100, unique=True)
-    value = models.TextField()
-    description = models.TextField(blank=True)
+    """Singleton model for system-wide attendance settings"""
+
+    # Office Hours
+    office_start_time = models.TimeField(default='07:00', help_text='Office opening time (e.g., 07:00)')
+    office_end_time = models.TimeField(default='17:00', help_text='Office closing time (e.g., 17:00). No clock in/out after this time.')
+
+    # Shift Configuration
+    required_shift_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=8.0,
+        help_text='Required shift duration including break (hours)'
+    )
+    break_duration_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0.5,
+        help_text='Unpaid break duration (hours). Deducted from shifts > 5 hours'
+    )
+
+    # Auto Clock-Out Settings
+    enable_auto_clockout = models.BooleanField(
+        default=True,
+        help_text='Automatically clock out employees at office closing time or after shift hours'
+    )
+    auto_clockout_interval = models.IntegerField(
+        default=30,
+        help_text='How often to check for auto clock-out (minutes)'
+    )
+
+    # Email Notifications
+    enable_weekly_reports = models.BooleanField(
+        default=True,
+        help_text='Send weekly attendance reports to employees'
+    )
+    weekly_report_day = models.IntegerField(
+        default=4,  # Friday (0=Monday, 4=Friday)
+        help_text='Day of week to send reports (0=Monday, 4=Friday, 6=Sunday)'
+    )
+    weekly_report_time = models.TimeField(
+        default='17:00',
+        help_text='Time to send weekly reports'
+    )
+
+    enable_early_clockout_alerts = models.BooleanField(
+        default=False,
+        help_text='Send alerts when employees clock out before completing required shift hours'
+    )
 
     class Meta:
-        verbose_name = 'System Setting'
+        verbose_name = 'System Settings'
         verbose_name_plural = 'System Settings'
 
+    def save(self, *args, **kwargs):
+        # Ensure only one instance exists (singleton)
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Prevent deletion
+        pass
+
+    @classmethod
+    def load(cls):
+        """Load or create the singleton settings instance"""
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+
     def __str__(self):
-        return self.key
+        return 'System Settings'

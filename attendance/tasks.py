@@ -6,16 +6,23 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 import pytz
 from .models import (
-    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog
+    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings
 )
 
 
 @shared_task
 def auto_clock_out_check():
     """
-    Auto clock-out employees after 8 hours OR at 5 PM (whichever comes first)
-    Runs every 10 minutes
+    Auto clock-out employees after required shift hours OR at office closing time (whichever comes first)
+    Controlled by SystemSettings
     """
+    # Load system settings
+    settings = SystemSettings.load()
+
+    # Check if auto clock-out is enabled
+    if not settings.enable_auto_clockout:
+        return "Auto clock-out is disabled in system settings"
+
     sydney_tz = pytz.timezone('Australia/Sydney')
     now = timezone.now().astimezone(sydney_tz)
     today = now.date()
@@ -30,16 +37,16 @@ def auto_clock_out_check():
     for summary in employees_in:
         should_clock_out = False
 
-        # Check if it's 5 PM or later
-        if current_time >= time(17, 0):
+        # Check if it's office closing time or later
+        if current_time >= settings.office_end_time:
             should_clock_out = True
 
-        # Check if 8 hours have passed since first clock in
+        # Check if required shift hours have passed since first clock in
         elif summary.first_clock_in:
             first_in_dt = datetime.combine(today, summary.first_clock_in)
             hours_elapsed = (now - sydney_tz.localize(first_in_dt)).total_seconds() / 3600
 
-            if hours_elapsed >= 8:
+            if hours_elapsed >= float(settings.required_shift_hours):
                 should_clock_out = True
 
         if should_clock_out:
@@ -63,9 +70,9 @@ def auto_clock_out_check():
             raw_hours = Decimal(time_diff.total_seconds() / 3600)
             summary.raw_hours = raw_hours
 
-            # Apply break deduction
+            # Apply break deduction (use system settings)
             if raw_hours > 5:
-                summary.break_deduction = Decimal('0.5')
+                summary.break_deduction = settings.break_duration_hours
             else:
                 summary.break_deduction = Decimal('0')
 
@@ -236,10 +243,16 @@ Attendance System
 @shared_task
 def send_weekly_reports():
     """
-    Send weekly reports every Friday at 5 PM
-    - Individual reports to each employee
-    - Summary report to manager
+    Send weekly reports on configured day/time
+    Controlled by SystemSettings
     """
+    # Load system settings
+    settings = SystemSettings.load()
+
+    # Check if weekly reports are enabled
+    if not settings.enable_weekly_reports:
+        return "Weekly reports are disabled in system settings"
+
     sydney_tz = pytz.timezone('Australia/Sydney')
     today = timezone.now().astimezone(sydney_tz).date()
 

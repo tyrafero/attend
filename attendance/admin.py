@@ -94,6 +94,36 @@ class EmailLogAdmin(ModelAdmin):
 
 @admin.register(SystemSettings)
 class SystemSettingsAdmin(ModelAdmin):
-    list_display = ['key', 'value', 'description']
-    search_fields = ['key', 'description']
-    list_filter_submit = True
+    """Admin interface for system-wide settings (singleton)"""
+
+    fieldsets = (
+        ('Office Hours', {
+            'fields': ('office_start_time', 'office_end_time'),
+            'description': 'Define when employees can clock in/out'
+        }),
+        ('Shift Configuration', {
+            'fields': ('required_shift_hours', 'break_duration_hours'),
+            'description': 'Configure shift duration and break time'
+        }),
+        ('Auto Clock-Out', {
+            'fields': ('enable_auto_clockout', 'auto_clockout_interval'),
+            'description': 'Automatically clock out employees at end of shift or office hours'
+        }),
+        ('Email Notifications', {
+            'fields': (
+                'enable_weekly_reports',
+                'weekly_report_day',
+                'weekly_report_time',
+                'enable_early_clockout_alerts',
+            ),
+            'description': 'Configure automated email notifications'
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Only allow one instance (singleton pattern)
+        return not SystemSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        # Prevent deletion of settings
+        return False
