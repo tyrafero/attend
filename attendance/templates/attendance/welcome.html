@@ -269,9 +269,21 @@
                 <img src="https://www.digitalcinema.com.au/media/logo/stores/1/dc-logo-300px.png" alt="Digital Cinema" style="height: 60px; margin-bottom: 10px;">
             </div>
             <h1>Welcome!</h1>
-            <p class="subtitle">Enter your PIN to clock in or out</p>
+            <p class="subtitle" id="subtitle-text">Tap your NFC card or enter PIN</p>
 
             <div class="error-message" id="error-message"></div>
+
+            <!-- NFC Tap Section -->
+            <div id="nfc-section" style="margin-bottom: 20px;">
+                <button class="btn btn-primary" onclick="startNFCScan()" id="nfc-button" style="margin-bottom: 15px;">
+                    📱 Tap NFC Card
+                </button>
+                <div id="nfc-status" style="text-align: center; color: #666; font-size: 14px; min-height: 20px;"></div>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 15px; color: #999; font-size: 14px;">
+                OR
+            </div>
 
             <div class="pin-display" id="pin-display">
                 <span id="pin-dots"></span>
@@ -467,6 +479,114 @@
                 backspace();
             } else if (e.key === 'Escape') {
                 clearPin();
+            }
+        });
+
+        // NFC Functions
+        let nfcReader = null;
+
+        async function startNFCScan() {
+            const nfcButton = document.getElementById('nfc-button');
+            const nfcStatus = document.getElementById('nfc-status');
+            hideError();
+
+            // Check if Web NFC is supported
+            if (!('NDEFReader' in window)) {
+                showError('NFC is not supported on this device or browser. Please use Chrome on Android or enter your PIN.');
+                return;
+            }
+
+            try {
+                // Request NFC permission
+                nfcStatus.textContent = '🔍 Ready to scan... Please tap your NFC card';
+                nfcStatus.style.color = '#667eea';
+                nfcButton.style.background = '#51cf66';
+                nfcButton.textContent = '✓ Scanning...';
+
+                // Create NFC reader
+                nfcReader = new NDEFReader();
+                await nfcReader.scan();
+
+                console.log('NFC scan started successfully');
+
+                // Listen for NFC tags
+                nfcReader.addEventListener('reading', ({ message, serialNumber }) => {
+                    console.log('NFC Tag detected!', serialNumber);
+                    submitNFC(serialNumber);
+                });
+
+                nfcReader.addEventListener('readingerror', () => {
+                    console.error('NFC read error');
+                    showError('Error reading NFC card. Please try again.');
+                    resetNFCButton();
+                });
+
+            } catch (error) {
+                console.error('NFC Error:', error);
+                if (error.name === 'NotAllowedError') {
+                    showError('NFC permission denied. Please allow NFC access and try again.');
+                } else if (error.name === 'NotSupportedError') {
+                    showError('NFC is not supported on this device.');
+                } else {
+                    showError('NFC error: ' + error.message);
+                }
+                resetNFCButton();
+            }
+        }
+
+        function resetNFCButton() {
+            const nfcButton = document.getElementById('nfc-button');
+            const nfcStatus = document.getElementById('nfc-status');
+            nfcButton.style.background = '#667eea';
+            nfcButton.textContent = '📱 Tap NFC Card';
+            nfcStatus.textContent = '';
+        }
+
+        function submitNFC(nfcId) {
+            console.log('Submitting NFC ID:', nfcId);
+
+            const nfcStatus = document.getElementById('nfc-status');
+            nfcStatus.textContent = '⏳ Processing...';
+            nfcStatus.style.color = '#667eea';
+
+            const csrftoken = getCSRFToken();
+
+            fetch('/clock/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken
+                },
+                body: `nfc_id=${encodeURIComponent(nfcId)}`
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showSuccess(data);
+                } else {
+                    showError(data.error);
+                    resetNFCButton();
+                }
+            })
+            .catch(error => {
+                showError('An error occurred. Please try again.');
+                console.error('Fetch error:', error);
+                resetNFCButton();
+            });
+        }
+
+        // Check NFC support on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!('NDEFReader' in window)) {
+                const nfcButton = document.getElementById('nfc-button');
+                nfcButton.disabled = true;
+                nfcButton.textContent = '⚠️ NFC Not Supported';
+                nfcButton.style.background = '#ccc';
+                document.getElementById('subtitle-text').textContent = 'Enter your PIN to clock in or out';
             }
         });
     </script>

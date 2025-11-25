@@ -1,21 +1,40 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from django.shortcuts import redirect
+from django.urls import path
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 from unfold.contrib.filters.admin import RangeDateFilter, RangeDateTimeFilter
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
-    TimesheetEdit, EmailLog, SystemSettings
+    TimesheetEdit, EmailLog, SystemSettings, AttendanceReport
 )
+from . import views
 
 
 @admin.register(EmployeeRegistry)
 class EmployeeRegistryAdmin(ModelAdmin):
-    list_display = ['employee_id', 'employee_name', 'email', 'show_active_status', 'created_at']
+    list_display = ['employee_id', 'employee_name', 'email', 'show_nfc_status', 'show_active_status', 'created_at']
     list_filter = ['is_active', 'created_at']
-    search_fields = ['employee_id', 'employee_name', 'email']
+    search_fields = ['employee_id', 'employee_name', 'email', 'nfc_id']
     readonly_fields = ['created_at']
     list_filter_submit = True
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('employee_id', 'employee_name', 'email', 'is_active')
+        }),
+        ('Authentication Methods', {
+            'fields': ('pin_code', 'nfc_id'),
+            'description': 'Employee can use either PIN or NFC card to clock in/out'
+        }),
+        ('Metadata', {
+            'fields': ('created_at',),
+        }),
+    )
+
+    @display(description="NFC", label=True)
+    def show_nfc_status(self, obj):
+        return "✓" if obj.nfc_id else "—"
 
     @display(description="Status", label=True)
     def show_active_status(self, obj):
@@ -127,3 +146,24 @@ class SystemSettingsAdmin(ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Prevent deletion of settings
         return False
+
+
+@admin.register(AttendanceReport)
+class AttendanceReportAdmin(ModelAdmin):
+    """Admin interface for Attendance Reports"""
+
+    def has_add_permission(self, request):
+        # Don't show "Add" button
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # No delete functionality
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # No change functionality
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        """Redirect to reports page when clicking on Attendance Reports"""
+        return views.reports_view(request)

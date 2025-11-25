@@ -22,17 +22,24 @@ def welcome_screen(request):
 # Clock In/Out Processing
 @require_http_methods(["POST"])
 def clock_action(request):
-    """Process clock in/out based on PIN"""
+    """Process clock in/out based on PIN or NFC"""
     pin = request.POST.get('pin', '').strip()
+    nfc_id = request.POST.get('nfc_id', '').strip()
 
-    if not pin:
-        return JsonResponse({'success': False, 'error': 'PIN is required'})
+    if not pin and not nfc_id:
+        return JsonResponse({'success': False, 'error': 'PIN or NFC ID is required'})
 
-    # Find employee by PIN
+    # Find employee by PIN or NFC ID
     try:
-        employee = EmployeeRegistry.objects.get(pin_code=pin, is_active=True)
+        if nfc_id:
+            employee = EmployeeRegistry.objects.get(nfc_id=nfc_id, is_active=True)
+        else:
+            employee = EmployeeRegistry.objects.get(pin_code=pin, is_active=True)
     except EmployeeRegistry.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Invalid PIN'})
+        if nfc_id:
+            return JsonResponse({'success': False, 'error': 'Invalid NFC card. Please register this card or use your PIN.'})
+        else:
+            return JsonResponse({'success': False, 'error': 'Invalid PIN'})
 
     # Get current time in Sydney timezone
     sydney_tz = pytz.timezone('Australia/Sydney')
@@ -294,3 +301,358 @@ def add_employee(request):
     return render(request, 'attendance/add_employee.html', {
         'suggested_id': next_id
     })
+
+
+# Reports View
+def reports_view(request):
+    """Attendance reports with filtering and date range selection"""
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    now = timezone.now().astimezone(sydney_tz)
+    today = now.date()
+
+    # Get filter parameters
+    employee_id = request.GET.get('employee_id', '')
+    report_type = request.GET.get('report_type', 'weekly')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+
+    # Calculate date range based on report type
+    if report_type == 'daily':
+        date_start = today
+        date_end = today
+    elif report_type == 'weekly':
+        date_start = today - timedelta(days=6)
+        date_end = today
+    elif report_type == 'monthly':
+        date_start = today.replace(day=1)
+        date_end = today
+    elif report_type == 'custom':
+        if start_date and end_date:
+            try:
+                date_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                date_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                date_start = today - timedelta(days=6)
+                date_end = today
+        else:
+            date_start = today - timedelta(days=6)
+            date_end = today
+    else:
+        date_start = today - timedelta(days=6)
+        date_end = today
+
+    # Build query
+    summaries_query = DailySummary.objects.filter(
+        date__gte=date_start,
+        date__lte=date_end
+    )
+
+    # Filter by employee if specified
+    if employee_id:
+        summaries_query = summaries_query.filter(employee_id=employee_id)
+
+    # Get summaries ordered by date and employee name
+    summaries = summaries_query.order_by('-date', 'employee_name')
+
+    # Calculate statistics
+    total_hours = summaries.aggregate(total=Sum('final_hours'))['total'] or Decimal('0')
+    total_days = summaries.values('date').distinct().count()
+    total_employees = summaries.values('employee_id').distinct().count()
+    avg_hours_per_day = (total_hours / total_days) if total_days > 0 else Decimal('0')
+
+    # Group by employee for summary
+    employee_summaries = {}
+    for summary in summaries:
+        if summary.employee_id not in employee_summaries:
+            employee_summaries[summary.employee_id] = {
+                'employee_name': summary.employee_name,
+                'employee_id': summary.employee_id,
+                'total_hours': Decimal('0'),
+                'days_worked': 0,
+                'records': []
+            }
+        employee_summaries[summary.employee_id]['total_hours'] += summary.final_hours
+        employee_summaries[summary.employee_id]['days_worked'] += 1
+        employee_summaries[summary.employee_id]['records'].append(summary)
+
+    # Convert to list and calculate averages
+    employee_list = []
+    for emp_id, data in employee_summaries.items():
+        data['avg_hours'] = data['total_hours'] / data['days_worked'] if data['days_worked'] > 0 else Decimal('0')
+        employee_list.append(data)
+
+    # Sort by employee name
+    employee_list.sort(key=lambda x: x['employee_name'])
+
+    # Get all active employees for dropdown
+    all_employees = EmployeeRegistry.objects.filter(is_active=True).order_by('employee_name')
+
+    context = {
+        'summaries': summaries,
+        'employee_summaries': employee_list,
+        'all_employees': all_employees,
+        'total_hours': total_hours,
+        'total_days': total_days,
+        'total_employees': total_employees,
+        'avg_hours_per_day': avg_hours_per_day,
+        'date_start': date_start,
+        'date_end': date_end,
+        'report_type': report_type,
+        'selected_employee_id': employee_id,
+        'start_date': start_date,
+        'end_date': end_date,
+    }
+
+    return render(request, 'attendance/reports.html', context)
+
+
+# Export to CSV
+def export_csv(request):
+    """Export attendance report to CSV"""
+    import csv
+    from django.http import HttpResponse
+
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    now = timezone.now().astimezone(sydney_tz)
+    today = now.date()
+
+    # Get filter parameters (same as reports_view)
+    employee_id = request.GET.get('employee_id', '')
+    report_type = request.GET.get('report_type', 'weekly')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+
+    # Calculate date range
+    if report_type == 'daily':
+        date_start = today
+        date_end = today
+    elif report_type == 'weekly':
+        date_start = today - timedelta(days=6)
+        date_end = today
+    elif report_type == 'monthly':
+        date_start = today.replace(day=1)
+        date_end = today
+    elif report_type == 'custom':
+        if start_date and end_date:
+            try:
+                date_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                date_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                date_start = today - timedelta(days=6)
+                date_end = today
+        else:
+            date_start = today - timedelta(days=6)
+            date_end = today
+    else:
+        date_start = today - timedelta(days=6)
+        date_end = today
+
+    # Build query
+    summaries_query = DailySummary.objects.filter(
+        date__gte=date_start,
+        date__lte=date_end
+    )
+
+    if employee_id:
+        summaries_query = summaries_query.filter(employee_id=employee_id)
+
+    summaries = summaries_query.order_by('date', 'employee_name')
+
+    # Create CSV response
+    response = HttpResponse(content_type='text/csv')
+    filename = f'attendance_report_{date_start}_{date_end}.csv'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+
+    # Write header
+    writer.writerow([
+        'Date',
+        'Employee ID',
+        'Employee Name',
+        'First Clock In',
+        'Last Clock Out',
+        'Raw Hours',
+        'Break Deduction',
+        'Final Hours',
+        'Status',
+        'Tap Count'
+    ])
+
+    # Write data rows
+    for summary in summaries:
+        writer.writerow([
+            summary.date.strftime('%Y-%m-%d'),
+            summary.employee_id,
+            summary.employee_name,
+            summary.first_clock_in.strftime('%H:%M') if summary.first_clock_in else '',
+            summary.last_clock_out.strftime('%H:%M') if summary.last_clock_out else '',
+            str(summary.raw_hours),
+            str(summary.break_deduction),
+            str(summary.final_hours),
+            summary.get_current_status_display(),
+            summary.tap_count
+        ])
+
+    return response
+
+
+# Export to PDF
+def export_pdf(request):
+    """Export attendance report to PDF"""
+    from django.http import HttpResponse
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from io import BytesIO
+
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    now = timezone.now().astimezone(sydney_tz)
+    today = now.date()
+
+    # Get filter parameters
+    employee_id = request.GET.get('employee_id', '')
+    report_type = request.GET.get('report_type', 'weekly')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+
+    # Calculate date range
+    if report_type == 'daily':
+        date_start = today
+        date_end = today
+    elif report_type == 'weekly':
+        date_start = today - timedelta(days=6)
+        date_end = today
+    elif report_type == 'monthly':
+        date_start = today.replace(day=1)
+        date_end = today
+    elif report_type == 'custom':
+        if start_date and end_date:
+            try:
+                date_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                date_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                date_start = today - timedelta(days=6)
+                date_end = today
+        else:
+            date_start = today - timedelta(days=6)
+            date_end = today
+    else:
+        date_start = today - timedelta(days=6)
+        date_end = today
+
+    # Build query
+    summaries_query = DailySummary.objects.filter(
+        date__gte=date_start,
+        date__lte=date_end
+    )
+
+    if employee_id:
+        summaries_query = summaries_query.filter(employee_id=employee_id)
+
+    summaries = summaries_query.order_by('date', 'employee_name')
+
+    # Create PDF
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), topMargin=0.5*inch)
+
+    # Container for PDF elements
+    elements = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor('#1a365d'),
+        spaceAfter=12,
+        alignment=1  # Center
+    )
+
+    # Title
+    title = Paragraph(f'Attendance Report<br/>{date_start.strftime("%B %d, %Y")} - {date_end.strftime("%B %d, %Y")}', title_style)
+    elements.append(title)
+    elements.append(Spacer(1, 0.2*inch))
+
+    # Statistics
+    total_hours = summaries.aggregate(total=Sum('final_hours'))['total'] or Decimal('0')
+    total_employees = summaries.values('employee_id').distinct().count()
+
+    stats_data = [
+        ['Total Employees:', str(total_employees), 'Total Hours:', f'{total_hours:.2f}h']
+    ]
+    stats_table = Table(stats_data, colWidths=[1.5*inch, 1*inch, 1.5*inch, 1*inch])
+    stats_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2d3748')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(stats_table)
+    elements.append(Spacer(1, 0.3*inch))
+
+    # Table data
+    data = [['Date', 'Employee ID', 'Employee Name', 'Clock In', 'Clock Out', 'Raw Hours', 'Break', 'Final Hours', 'Status']]
+
+    for summary in summaries:
+        data.append([
+            summary.date.strftime('%Y-%m-%d'),
+            summary.employee_id,
+            summary.employee_name[:20],  # Truncate long names
+            summary.first_clock_in.strftime('%H:%M') if summary.first_clock_in else '-',
+            summary.last_clock_out.strftime('%H:%M') if summary.last_clock_out else '-',
+            f'{summary.raw_hours:.2f}h',
+            f'{summary.break_deduction:.2f}h',
+            f'{summary.final_hours:.2f}h',
+            summary.get_current_status_display()
+        ])
+
+    # Create table
+    table = Table(data, colWidths=[0.9*inch, 0.9*inch, 1.5*inch, 0.8*inch, 0.8*inch, 0.9*inch, 0.7*inch, 0.9*inch, 0.8*inch])
+    table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d3748')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+
+        # Data rows
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2d3748')),
+        ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+
+        # Grid
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+
+        # Alternating row colors
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
+    ]))
+
+    elements.append(table)
+
+    # Build PDF
+    doc.build(elements)
+
+    # Get PDF from buffer
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    # Create response
+    response = HttpResponse(content_type='application/pdf')
+    filename = f'attendance_report_{date_start}_{date_end}.pdf'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.write(pdf)
+
+    return response

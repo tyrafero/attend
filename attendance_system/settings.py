@@ -283,6 +283,11 @@ UNFOLD = {
                 "separator": True,
                 "items": [
                     {
+                        "title": _("Attendance Reports"),
+                        "icon": "assessment",
+                        "link": reverse_lazy("admin:attendance_attendancereport_changelist"),
+                    },
+                    {
                         "title": _("Timesheet Edits"),
                         "icon": "edit_note",
                         "link": reverse_lazy("admin:attendance_timesheetedit_changelist"),

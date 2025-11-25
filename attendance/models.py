@@ -6,7 +6,8 @@ class EmployeeRegistry(models.Model):
     employee_id = models.CharField(max_length=50, unique=True)  # EMP123
     employee_name = models.CharField(max_length=200)
     email = models.EmailField()
-    pin_code = models.CharField(max_length=6)  # 4-6 digit PIN
+    pin_code = models.CharField(max_length=6, blank=True)  # 4-6 digit PIN (optional if using NFC)
+    nfc_id = models.CharField(max_length=100, blank=True, unique=True, null=True)  # NFC card unique ID
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -182,3 +183,13 @@ class SystemSettings(models.Model):
 
     def __str__(self):
         return 'System Settings'
+
+
+class AttendanceReport(models.Model):
+    """Proxy model for Reports section in admin - doesn't create a table"""
+    class Meta:
+        managed = False  # Don't create database table
+        verbose_name = 'Attendance Report'
+        verbose_name_plural = 'Attendance Reports'
+        app_label = 'attendance'
+        # This will make it appear in the admin under a "Reports" section

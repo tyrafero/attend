@@ -16,8 +16,13 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.contrib.admin.views.decorators import staff_member_required
+from attendance import views as attendance_views
 
 urlpatterns = [
     path('django-admin/', admin.site.urls),  # Renamed to avoid conflict
+    path('django-admin/reports/', staff_member_required(attendance_views.reports_view), name='admin_reports'),
+    path('django-admin/reports/export/csv/', staff_member_required(attendance_views.export_csv), name='admin_export_csv'),
+    path('django-admin/reports/export/pdf/', staff_member_required(attendance_views.export_pdf), name='admin_export_pdf'),
     path('', include('attendance.urls')),  # Attendance app URLs
 ]
