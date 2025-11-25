@@ -16,7 +16,11 @@ from .models import (
 # Employee Welcome Screen
 def welcome_screen(request):
     """Landing page with PIN entry keypad"""
-    return render(request, 'attendance/welcome.html')
+    employee_id = request.GET.get('employee_id', '')
+    context = {
+        'employee_id': employee_id
+    }
+    return render(request, 'attendance/welcome.html', context)
 
 
 # Clock In/Out Processing

@@ -16,6 +16,12 @@ class EmployeeRegistry(models.Model):
         verbose_name_plural = 'Employees'
         ordering = ['employee_name']
 
+    def save(self, *args, **kwargs):
+        # Auto-sync nfc_id with employee_id if nfc_id is empty
+        if not self.nfc_id:
+            self.nfc_id = self.employee_id
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.employee_id} - {self.employee_name}"
 

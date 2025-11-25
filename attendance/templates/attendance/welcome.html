@@ -588,7 +588,49 @@
                 nfcButton.style.background = '#ccc';
                 document.getElementById('subtitle-text').textContent = 'Enter your PIN to clock in or out';
             }
+
+            // Auto-submit if employee_id is in URL (from NFC card tap)
+            const urlParams = new URLSearchParams(window.location.search);
+            const employeeId = urlParams.get('employee_id') || '{{ employee_id }}';
+
+            if (employeeId && employeeId !== '') {
+                console.log('Auto-submitting for employee:', employeeId);
+                submitEmployeeId(employeeId);
+            }
         });
+
+        // Submit using employee_id (from NFC URL)
+        function submitEmployeeId(employeeId) {
+            const nfcStatus = document.getElementById('nfc-status');
+            if (nfcStatus) {
+                nfcStatus.textContent = '⏳ Processing...';
+                nfcStatus.style.color = '#667eea';
+            }
+
+            const csrftoken = getCSRFToken();
+
+            fetch('/clock/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken
+                },
+                body: `nfc_id=${encodeURIComponent(employeeId)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showSuccess(data);
+                } else {
+                    showError(data.error);
+                }
+            })
+            .catch(error => {
+                showError('An error occurred. Please try again.');
+                console.error('Fetch error:', error);
+            });
+        }
     </script>
 </body>
 </html>
