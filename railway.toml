@@ -1,0 +1,13 @@
+# Railway configuration for multiple services
+
+[[services]]
+name = "web"
+startCommand = "/app/entrypoint.sh"
+
+[[services]]
+name = "celery-worker"
+startCommand = "bash /app/start-worker.sh"
+
+[[services]]
+name = "celery-beat"
+startCommand = "bash /app/start-beat.sh"

@@ -160,7 +160,8 @@ try:
     CELERY_TASK_SERIALIZER = 'json'
     CELERY_RESULT_SERIALIZER = 'json'
     CELERY_TIMEZONE = config('TIME_ZONE', default='Australia/Sydney')
-    CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+    # Use default scheduler (reads schedule from celery.py)
+    # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
     # Celery Production Settings
     CELERY_TASK_TRACK_STARTED = True

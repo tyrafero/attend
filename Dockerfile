@@ -29,8 +29,8 @@ RUN mkdir -p /app/static /app/staticfiles
 # Collect static files during build (faster startup)
 RUN python manage.py collectstatic --noinput --clear || echo "Static collection skipped"
 
-# Make entrypoint executable
-RUN chmod +x /app/entrypoint.sh
+# Make scripts executable
+RUN chmod +x /app/entrypoint.sh /app/start-worker.sh /app/start-beat.sh
 
 # Expose port
 EXPOSE 8000
