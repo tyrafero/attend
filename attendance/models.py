@@ -88,6 +88,28 @@ class DailySummary(models.Model):
         if self.selected_employee:
             self.employee_id = self.selected_employee.employee_id
             self.employee_name = self.selected_employee.employee_name
+
+        # Auto-calculate hours if both clock-in and clock-out times are set
+        if self.first_clock_in and self.last_clock_out:
+            from datetime import datetime
+            from decimal import Decimal
+
+            # Calculate raw hours
+            first_in_dt = datetime.combine(self.date, self.first_clock_in)
+            last_out_dt = datetime.combine(self.date, self.last_clock_out)
+            time_diff = last_out_dt - first_in_dt
+            self.raw_hours = Decimal(time_diff.total_seconds() / 3600)
+
+            # Apply break deduction from system settings
+            system_settings = SystemSettings.load()
+            if self.raw_hours > 5:
+                self.break_deduction = system_settings.break_duration_hours
+            else:
+                self.break_deduction = Decimal('0')
+
+            # Calculate final hours
+            self.final_hours = self.raw_hours - self.break_deduction
+
         super().save(*args, **kwargs)
 
     def __str__(self):
