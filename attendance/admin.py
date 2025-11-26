@@ -82,10 +82,11 @@ class DailySummaryAdmin(ModelAdmin):
         }),
         ('Hours Calculation', {
             'fields': ('raw_hours', 'break_deduction', 'final_hours'),
-            'description': 'Hours worked and break deductions'
+            'description': 'Auto-calculated based on clock in/out times'
         }),
         ('Metadata', {
             'fields': ('tap_count',),
+            'description': 'Auto-populated'
         }),
     )
 
@@ -101,7 +102,8 @@ class DailySummaryAdmin(ModelAdmin):
         }),
     )
 
-    readonly_fields = ['employee_id', 'employee_name']  # These are auto-populated
+    # Make auto-calculated fields read-only
+    readonly_fields = ['employee_id', 'employee_name', 'raw_hours', 'break_deduction', 'final_hours', 'tap_count']
 
     def get_fieldsets(self, request, obj=None):
         """Use different fieldsets for add vs edit"""
