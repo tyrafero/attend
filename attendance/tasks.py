@@ -17,10 +17,10 @@ def auto_clock_out_check():
     Controlled by SystemSettings
     """
     # Load system settings
-    settings = SystemSettings.load()
+    system_settings = SystemSettings.load()
 
     # Check if auto clock-out is enabled
-    if not settings.enable_auto_clockout:
+    if not system_settings.enable_auto_clockout:
         return "Auto clock-out is disabled in system settings"
 
     sydney_tz = pytz.timezone('Australia/Sydney')
@@ -38,7 +38,7 @@ def auto_clock_out_check():
         should_clock_out = False
 
         # Check if it's office closing time or later
-        if current_time >= settings.office_end_time:
+        if current_time >= system_settings.office_end_time:
             should_clock_out = True
 
         # Check if required shift hours have passed since first clock in
@@ -46,7 +46,7 @@ def auto_clock_out_check():
             first_in_dt = datetime.combine(today, summary.first_clock_in)
             hours_elapsed = (now - sydney_tz.localize(first_in_dt)).total_seconds() / 3600
 
-            if hours_elapsed >= float(settings.required_shift_hours):
+            if hours_elapsed >= float(system_settings.required_shift_hours):
                 should_clock_out = True
 
         if should_clock_out:
@@ -72,7 +72,7 @@ def auto_clock_out_check():
 
             # Apply break deduction (use system settings)
             if raw_hours > 5:
-                summary.break_deduction = settings.break_duration_hours
+                summary.break_deduction = system_settings.break_duration_hours
             else:
                 summary.break_deduction = Decimal('0')
 
@@ -247,10 +247,10 @@ def send_weekly_reports():
     Controlled by SystemSettings
     """
     # Load system settings
-    settings = SystemSettings.load()
+    system_settings = SystemSettings.load()
 
     # Check if weekly reports are enabled
-    if not settings.enable_weekly_reports:
+    if not system_settings.enable_weekly_reports:
         return "Weekly reports are disabled in system settings"
 
     sydney_tz = pytz.timezone('Australia/Sydney')
