@@ -64,8 +64,23 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR('  ERROR: No first_clock_in time - skipping'))
                 continue
 
-            # Use office end time as clock-out time
-            clock_out_time = system_settings.office_end_time
+            # Calculate clock-out time: whichever comes first
+            # - 8 hours from start time, OR
+            # - Office end time (5 PM)
+            from datetime import timedelta
+
+            # Calculate 8 hours from start
+            first_in_dt = datetime.combine(target_date, summary.first_clock_in)
+            eight_hours_later = first_in_dt + timedelta(hours=float(system_settings.required_shift_hours))
+            eight_hours_time = eight_hours_later.time()
+
+            # Use whichever comes first
+            if eight_hours_time <= system_settings.office_end_time:
+                clock_out_time = eight_hours_time
+                reason = f"8 hours from start ({summary.first_clock_in})"
+            else:
+                clock_out_time = system_settings.office_end_time
+                reason = f"Office end time"
 
             if not dry_run:
                 # Create auto clock-out tap
@@ -97,7 +112,7 @@ class Command(BaseCommand):
                 summary.final_hours = summary.raw_hours - summary.break_deduction
                 summary.save()
 
-                self.stdout.write(self.style.SUCCESS(f'  ✓ Clocked out at {clock_out_time}'))
+                self.stdout.write(self.style.SUCCESS(f'  ✓ Clocked out at {clock_out_time} ({reason})'))
                 self.stdout.write(f'  Raw hours: {summary.raw_hours}h')
                 self.stdout.write(f'  Break deduction: {summary.break_deduction}h')
                 self.stdout.write(f'  Final hours: {summary.final_hours}h')
@@ -116,7 +131,7 @@ class Command(BaseCommand):
 
                 final_hours = raw_hours - break_deduction
 
-                self.stdout.write(f'  Would clock out at {clock_out_time}')
+                self.stdout.write(f'  Would clock out at {clock_out_time} ({reason})')
                 self.stdout.write(f'  Raw hours: {raw_hours}h')
                 self.stdout.write(f'  Break deduction: {break_deduction}h')
                 self.stdout.write(f'  Final hours: {final_hours}h')
