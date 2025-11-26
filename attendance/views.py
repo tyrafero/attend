@@ -316,7 +316,7 @@ def reports_view(request):
 
     # Get filter parameters
     employee_id = request.GET.get('employee_id', '')
-    report_type = request.GET.get('report_type', 'weekly')
+    report_type = request.GET.get('report_type', 'daily')  # Default to today
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
 
@@ -422,7 +422,7 @@ def export_csv(request):
 
     # Get filter parameters (same as reports_view)
     employee_id = request.GET.get('employee_id', '')
-    report_type = request.GET.get('report_type', 'weekly')
+    report_type = request.GET.get('report_type', 'daily')  # Default to today
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
 
@@ -518,7 +518,7 @@ def export_pdf(request):
 
     # Get filter parameters
     employee_id = request.GET.get('employee_id', '')
-    report_type = request.GET.get('report_type', 'weekly')
+    report_type = request.GET.get('report_type', 'daily')  # Default to today
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
 

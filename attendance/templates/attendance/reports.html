@@ -162,11 +162,11 @@
                     Export Reports
                 </h3>
                 <div class="flex gap-3">
-                    <a href="/django-admin/reports/export/csv/?{{ request.GET.urlencode }}" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2">
+                    <a href="{% url 'attendance:export_csv' %}?{{ request.GET.urlencode }}" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition flex items-center gap-2">
                         <span class="material-symbols-outlined">table_chart</span>
                         Export CSV
                     </a>
-                    <a href="/django-admin/reports/export/pdf/?{{ request.GET.urlencode }}" class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition flex items-center gap-2">
+                    <a href="{% url 'attendance:export_pdf' %}?{{ request.GET.urlencode }}" class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition flex items-center gap-2">
                         <span class="material-symbols-outlined">picture_as_pdf</span>
                         Export PDF
                     </a>
