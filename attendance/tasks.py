@@ -79,8 +79,8 @@ def auto_clock_out_check():
             summary.final_hours = summary.raw_hours - summary.break_deduction
             summary.save()
 
-            # Send notification
-            send_auto_clockout_notification.delay(summary.employee_id, str(current_time))
+            # Email notifications disabled - only weekly summaries are sent
+            # send_auto_clockout_notification.delay(summary.employee_id, str(current_time))
 
     return f"Auto clock-out check completed. {employees_in.count()} employees checked."
 
@@ -241,7 +241,7 @@ Attendance System
 
 
 @shared_task
-def send_weekly_reports():
+def send_weekly_reports_old():
     """
     Send weekly reports on configured day/time
     Controlled by SystemSettings
@@ -326,3 +326,119 @@ Attendance System
             )
 
     return f"Sent weekly reports to {employees.count()} employees"
+
+
+@shared_task
+def send_weekly_reports():
+    """
+    Send beautiful HTML weekly reports every Friday after 5 PM
+    """
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings as django_settings
+
+    # Load system settings
+    system_settings = SystemSettings.load()
+
+    # Check if weekly reports are enabled
+    if not system_settings.enable_weekly_reports:
+        return "Weekly reports are disabled in system settings"
+
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    today = timezone.now().astimezone(sydney_tz).date()
+    current_year = today.year
+
+    # Calculate week range (Monday to Friday)
+    days_since_monday = today.weekday()
+    monday = today - timedelta(days=days_since_monday)
+    friday = monday + timedelta(days=4)
+
+    # Get all active employees
+    employees = EmployeeRegistry.objects.filter(is_active=True)
+
+    sent_count = 0
+
+    # Send individual reports
+    for employee in employees:
+        # Get this week's attendance records
+        summaries = DailySummary.objects.filter(
+            employee_id=employee.employee_id,
+            date__gte=monday,
+            date__lte=friday
+        ).order_by('date')
+
+        # Calculate totals
+        total_hours = sum(s.final_hours for s in summaries if s.final_hours)
+        days_worked = sum(1 for s in summaries if s.final_hours and s.final_hours > 0)
+        avg_hours = (total_hours / days_worked) if days_worked > 0 else Decimal('0')
+
+        # Prepare template context
+        context = {
+            'employee_name': employee.employee_name,
+            'week_start': monday,
+            'week_end': friday,
+            'total_hours': f"{total_hours:.1f}",
+            'days_worked': days_worked,
+            'avg_hours': f"{avg_hours:.1f}",
+            'records': summaries,
+            'current_year': current_year,
+        }
+
+        try:
+            # Render HTML email
+            html_content = render_to_string('attendance/emails/weekly_report.html', context)
+
+            # Create plain text version
+            text_content = f"""
+Weekly Attendance Report
+{monday.strftime('%B %d')} - {friday.strftime('%B %d, %Y')}
+
+Hello {employee.employee_name},
+
+Total Hours: {total_hours:.1f}h
+Days Worked: {days_worked}/5
+
+Daily Breakdown:
+"""
+            for record in summaries:
+                clock_in = record.first_clock_in.strftime('%I:%M %p') if record.first_clock_in else '—'
+                clock_out = record.last_clock_out.strftime('%I:%M %p') if record.last_clock_out else '—'
+                hours = f"{record.final_hours}h" if record.final_hours else '—'
+                text_content += f"{record.date.strftime('%A, %b %d')}: {clock_in} - {clock_out} ({hours})\n"
+
+            text_content += f"\nBest regards,\nDigital Cinema Attendance System"
+
+            # Create email with both HTML and plain text
+            subject = f'📊 Weekly Attendance Report - Week of {monday.strftime("%b %d")}'
+
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=django_settings.DEFAULT_FROM_EMAIL,
+                to=[employee.email]
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send()
+
+            # Log success
+            EmailLog.objects.create(
+                email_type='WEEKLY_REPORT',
+                recipient=employee.email,
+                employee_id=employee.employee_id,
+                status='SUCCESS',
+                details=f'Beautiful HTML weekly report sent for {monday} to {friday}'
+            )
+
+            sent_count += 1
+
+        except Exception as e:
+            # Log failure
+            EmailLog.objects.create(
+                email_type='WEEKLY_REPORT',
+                recipient=employee.email,
+                employee_id=employee.employee_id,
+                status='FAILED',
+                details=str(e)
+            )
+
+    return f"Sent beautiful weekly reports to {sent_count}/{employees.count()} employees"

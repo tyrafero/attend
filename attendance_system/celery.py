@@ -16,21 +16,20 @@ app.autodiscover_tasks()
 
 # Celery Beat schedule
 app.conf.beat_schedule = {
-    # Auto clock-out check every 30 minutes (reduced from 10)
+    # Auto clock-out check every 30 minutes (no email notification)
     'auto-clock-out-check': {
         'task': 'attendance.tasks.auto_clock_out_check',
         'schedule': crontab(minute='*/30'),  # Every 30 minutes
     },
-    # Missed clock-out check daily at 8 PM
-    'missed-clock-out-reminder': {
-        'task': 'attendance.tasks.send_missed_clock_out_reminders',
-        'schedule': crontab(hour=20, minute=0),  # 8 PM daily
-    },
-    # Weekly reports every Friday at 5 PM
+    # Weekly reports every Friday at 5 PM (beautiful HTML emails)
     'weekly-reports': {
         'task': 'attendance.tasks.send_weekly_reports',
         'schedule': crontab(hour=17, minute=0, day_of_week=5),  # Friday 5 PM
     },
+    # Disabled email notifications (only weekly reports are sent):
+    # - Missed clock-out reminders (disabled)
+    # - Auto clock-out notifications (disabled in tasks.py)
+    # - Early clock-out alerts (disabled)
 }
 
 # Additional Celery configuration
