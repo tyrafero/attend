@@ -10,4 +10,4 @@ python manage.py migrate --noinput
 exec celery -A attendance_system worker \
     --loglevel=info \
     --concurrency=2 \
-    --max-tasks-per-child=1000
+    --max-tasks-per-child=100

@@ -32,9 +32,12 @@ app.conf.beat_schedule = {
     # - Early clock-out alerts (disabled)
 }
 
+# Set timezone for beat scheduler
+app.conf.timezone = 'Australia/Sydney'
+
 # Additional Celery configuration
 app.conf.update(
-    worker_max_tasks_per_child=1000,
+    worker_max_tasks_per_child=100,  # Reduced to prevent memory issues
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,

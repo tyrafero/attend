@@ -167,7 +167,7 @@ try:
     CELERY_TASK_TRACK_STARTED = True
     CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
     CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
-    CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks
+    CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # Restart worker after 100 tasks to prevent memory issues
     CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
     CELERY_BROKER_POOL_LIMIT = 10  # Limit Redis connections
     CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion
