@@ -2,87 +2,106 @@ from celery import shared_task
 from django.core.mail import send_mail
 from django.utils import timezone
 from django.conf import settings
+from django.db import connection
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 import pytz
+import logging
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings
 )
 
+logger = logging.getLogger(__name__)
 
-@shared_task
-def auto_clock_out_check():
+
+@shared_task(bind=True, max_retries=3)
+def auto_clock_out_check(self):
     """
     Auto clock-out employees after required shift hours OR at office closing time (whichever comes first)
     Controlled by SystemSettings
     """
-    # Load system settings
-    system_settings = SystemSettings.load()
+    try:
+        connection.close()  # Close stale connections
 
-    # Check if auto clock-out is enabled
-    if not system_settings.enable_auto_clockout:
-        return "Auto clock-out is disabled in system settings"
+        # Load system settings
+        system_settings = SystemSettings.load()
 
-    sydney_tz = pytz.timezone('Australia/Sydney')
-    now = timezone.now().astimezone(sydney_tz)
-    today = now.date()
-    current_time = now.time()
+        # Check if auto clock-out is enabled
+        if not system_settings.enable_auto_clockout:
+            return "Auto clock-out is disabled in system settings"
 
-    # Get all employees currently clocked IN
-    employees_in = DailySummary.objects.filter(
-        date=today,
-        current_status='IN'
-    )
+        sydney_tz = pytz.timezone('Australia/Sydney')
+        now = timezone.now().astimezone(sydney_tz)
+        today = now.date()
+        current_time = now.time()
 
-    for summary in employees_in:
-        should_clock_out = False
+        # Get all employees currently clocked IN
+        employees_in = DailySummary.objects.filter(
+            date=today,
+            current_status='IN'
+        )
 
-        # Check if it's office closing time or later
-        if current_time >= system_settings.office_end_time:
-            should_clock_out = True
+        clocked_out = 0
 
-        # Check if required shift hours have passed since first clock in
-        elif summary.first_clock_in:
-            first_in_dt = datetime.combine(today, summary.first_clock_in)
-            hours_elapsed = (now - sydney_tz.localize(first_in_dt)).total_seconds() / 3600
+        for summary in employees_in:
+            should_clock_out = False
 
-            if hours_elapsed >= float(system_settings.required_shift_hours):
+            # Check if it's office closing time or later
+            if current_time >= system_settings.office_end_time:
                 should_clock_out = True
 
-        if should_clock_out:
-            # Create auto clock-out tap
-            AttendanceTap.objects.create(
-                employee_id=summary.employee_id,
-                employee_name=summary.employee_name,
-                action='OUT',
-                notes='Auto clock-out'
-            )
+            # Check if required shift hours have passed since first clock in
+            elif summary.first_clock_in:
+                # FIX: make datetime timezone-aware
+                first_in_dt = sydney_tz.localize(datetime.combine(today, summary.first_clock_in))
+                hours_elapsed = (now - first_in_dt).total_seconds() / 3600
 
-            # Update daily summary
-            summary.last_clock_out = current_time
-            summary.tap_count += 1
-            summary.current_status = 'OUT'
+                if hours_elapsed >= float(system_settings.required_shift_hours):
+                    should_clock_out = True
 
-            # Calculate hours
-            first_in_dt = datetime.combine(today, summary.first_clock_in)
-            last_out_dt = datetime.combine(today, summary.last_clock_out)
-            time_diff = last_out_dt - first_in_dt
-            raw_hours = Decimal(time_diff.total_seconds() / 3600)
-            summary.raw_hours = raw_hours
+            if should_clock_out:
+                # Create auto clock-out tap
+                AttendanceTap.objects.create(
+                    employee_id=summary.employee_id,
+                    employee_name=summary.employee_name,
+                    action='OUT',
+                    notes='Auto clock-out'
+                )
 
-            # Apply break deduction (use system settings)
-            if raw_hours > 5:
-                summary.break_deduction = system_settings.break_duration_hours
-            else:
-                summary.break_deduction = Decimal('0')
+                # Update daily summary
+                summary.last_clock_out = current_time
+                summary.tap_count += 1
+                summary.current_status = 'OUT'
 
-            summary.final_hours = summary.raw_hours - summary.break_deduction
-            summary.save()
+                # Calculate hours
+                # FIX: make both datetimes timezone-aware
+                first_in_dt = sydney_tz.localize(datetime.combine(today, summary.first_clock_in))
+                last_out_dt = sydney_tz.localize(datetime.combine(today, summary.last_clock_out))
+                time_diff = last_out_dt - first_in_dt
+                raw_hours = Decimal(time_diff.total_seconds() / 3600)
 
-            # Email notifications disabled - only weekly summaries are sent
-            # send_auto_clockout_notification.delay(summary.employee_id, str(current_time))
+                summary.raw_hours = raw_hours
 
-    return f"Auto clock-out check completed. {employees_in.count()} employees checked."
+                # Apply break deduction (use system settings)
+                if raw_hours > 5:
+                    summary.break_deduction = system_settings.break_duration_hours
+                else:
+                    summary.break_deduction = Decimal('0')
+
+                summary.final_hours = summary.raw_hours - summary.break_deduction
+                summary.save()
+
+                clocked_out += 1
+
+                # Email notifications disabled - only weekly summaries are sent
+                # send_auto_clockout_notification.delay(summary.employee_id, str(current_time))
+
+        logger.info(f"Auto clock-out completed. Checked: {employees_in.count()}, Clocked out: {clocked_out}")
+        return f"Auto clock-out check completed. {clocked_out} employees clocked out."
+
+    except Exception as e:
+        logger.error(f"Auto clock-out failed: {e}")
+        raise self.retry(exc=e, countdown=300)
 
 
 @shared_task
