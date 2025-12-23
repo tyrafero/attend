@@ -277,6 +277,11 @@ UNFOLD = {
                         "icon": "summarize",
                         "link": reverse_lazy("admin:attendance_dailysummary_changelist"),
                     },
+                    {
+                        "title": _("Leave Records"),
+                        "icon": "beach_access",
+                        "link": reverse_lazy("admin:attendance_leaverecord_changelist"),
+                    },
                 ],
             },
             {
@@ -337,6 +342,11 @@ def dashboard_callback(request, context):
                         "title": "Add Employee",
                         "icon": "person_add",
                         "link": reverse_lazy("admin:attendance_employeeregistry_add"),
+                    },
+                    {
+                        "title": "Add Leave Record",
+                        "icon": "beach_access",
+                        "link": reverse_lazy("admin:attendance_leaverecord_add"),
                     },
                     {
                         "title": "View Dashboard",

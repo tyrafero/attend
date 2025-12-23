@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytz
 import logging
 from .models import (
-    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings
+    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings, LeaveRecord
 )
 
 logger = logging.getLogger(__name__)
@@ -348,6 +348,82 @@ Attendance System
 
 
 @shared_task
+def send_leave_notification(leave_record_id):
+    """Send email notification when leave is created"""
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings as django_settings
+
+    try:
+        leave_record = LeaveRecord.objects.get(id=leave_record_id)
+        employee = leave_record.selected_employee
+
+        if not employee or not employee.email:
+            return f"No email for employee {leave_record.employee_id}"
+
+        # Render email template
+        html_content = render_to_string('attendance/emails/leave_notification.html', {
+            'employee_name': employee.employee_name,
+            'leave_record': leave_record,
+            'leave_type_display': leave_record.get_leave_type_display(),
+            'dates_list': leave_record.get_dates_list(),
+        })
+
+        # Plain text fallback
+        text_content = f"""
+Leave Approved
+
+Hello {employee.employee_name},
+
+Your leave has been approved:
+
+Leave Type: {leave_record.get_leave_type_display()}
+Start Date: {leave_record.start_date.strftime('%A, %B %d, %Y')}
+End Date: {leave_record.end_date.strftime('%A, %B %d, %Y')}
+Total Days: {leave_record.total_days}
+Total Hours: {leave_record.total_hours}
+Reason: {leave_record.reason or 'N/A'}
+
+This leave will count toward your worked hours.
+        """
+
+        # Send email
+        msg = EmailMultiAlternatives(
+            subject=f'Leave Approved - {leave_record.get_leave_type_display()}',
+            body=text_content,
+            from_email=django_settings.DEFAULT_FROM_EMAIL,
+            to=[employee.email]
+        )
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
+
+        # Log success
+        EmailLog.objects.create(
+            email_type='LEAVE_NOTIFICATION',
+            recipient=employee.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'Leave notification sent for {leave_record.leave_type} from {leave_record.start_date} to {leave_record.end_date}'
+        )
+
+        return f"Leave notification sent to {employee.email}"
+
+    except LeaveRecord.DoesNotExist:
+        return f"LeaveRecord {leave_record_id} not found"
+    except Exception as e:
+        # Log failure
+        EmailLog.objects.create(
+            email_type='LEAVE_NOTIFICATION',
+            recipient=employee.email if 'employee' in locals() else 'unknown',
+            employee_id=leave_record.employee_id if 'leave_record' in locals() else 'unknown',
+            status='FAILED',
+            details=f'Error: {str(e)}'
+        )
+        logger.error(f"Failed to send leave notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
 def send_weekly_reports():
     """
     Send beautiful HTML weekly reports every Friday after 5 PM
@@ -355,6 +431,7 @@ def send_weekly_reports():
     from django.core.mail import EmailMultiAlternatives
     from django.template.loader import render_to_string
     from django.conf import settings as django_settings
+    from django.db.models import Avg, Sum
 
     # Load system settings
     system_settings = SystemSettings.load()
@@ -375,6 +452,71 @@ def send_weekly_reports():
     # Get all active employees
     employees = EmployeeRegistry.objects.filter(is_active=True)
 
+    # Calculate weekly awards
+    early_bird = None
+    overtime_champion = None
+
+    # Get all summaries for this week
+    all_summaries = DailySummary.objects.filter(
+        date__gte=monday,
+        date__lte=friday
+    )
+
+    # Calculate Early Bird (earliest average clock-in time)
+    employee_avg_clock_in = {}
+    for emp in employees:
+        emp_summaries = all_summaries.filter(
+            employee_id=emp.employee_id,
+            first_clock_in__isnull=False
+        )
+        if emp_summaries.exists():
+            # Calculate average clock-in time in seconds since midnight
+            total_seconds = 0
+            count = 0
+            for summary in emp_summaries:
+                if summary.first_clock_in:
+                    seconds = summary.first_clock_in.hour * 3600 + \
+                             summary.first_clock_in.minute * 60 + \
+                             summary.first_clock_in.second
+                    total_seconds += seconds
+                    count += 1
+            if count > 0:
+                avg_seconds = total_seconds / count
+                employee_avg_clock_in[emp.employee_id] = {
+                    'name': emp.employee_name,
+                    'avg_seconds': avg_seconds,
+                    'avg_time': timedelta(seconds=avg_seconds)
+                }
+
+    if employee_avg_clock_in:
+        earliest_emp_id = min(employee_avg_clock_in.keys(),
+                             key=lambda x: employee_avg_clock_in[x]['avg_seconds'])
+        early_bird = {
+            'name': employee_avg_clock_in[earliest_emp_id]['name'],
+            'avg_time': str(employee_avg_clock_in[earliest_emp_id]['avg_time']).split('.')[0]
+        }
+
+    # Calculate Overtime Champion (most total hours worked)
+    employee_total_hours = {}
+    for emp in employees:
+        total = all_summaries.filter(
+            employee_id=emp.employee_id
+        ).aggregate(total_hours=Sum('final_hours'))['total_hours'] or Decimal('0')
+
+        if total > 0:
+            employee_total_hours[emp.employee_id] = {
+                'name': emp.employee_name,
+                'total_hours': total
+            }
+
+    if employee_total_hours:
+        champion_emp_id = max(employee_total_hours.keys(),
+                             key=lambda x: employee_total_hours[x]['total_hours'])
+        overtime_champion = {
+            'name': employee_total_hours[champion_emp_id]['name'],
+            'total_hours': f"{employee_total_hours[champion_emp_id]['total_hours']:.1f}"
+        }
+
     sent_count = 0
 
     # Send individual reports
@@ -385,6 +527,43 @@ def send_weekly_reports():
             date__gte=monday,
             date__lte=friday
         ).order_by('date')
+
+        # Get this week's leave records
+        emp_leaves = LeaveRecord.objects.filter(
+            employee_id=employee.employee_id,
+            start_date__lte=friday,
+            end_date__gte=monday
+        )
+
+        # Calculate leave hours for the week
+        leave_hours = Decimal('0')
+        leave_days = 0
+        for leave in emp_leaves:
+            # For each leave, count only the days that fall within this week
+            current_day = max(leave.start_date, monday)
+            end_day = min(leave.end_date, friday)
+            while current_day <= end_day:
+                if current_day.weekday() < 5:  # Monday-Friday
+                    leave_hours += leave.hours_per_day
+                    leave_days += 1
+                current_day += timedelta(days=1)
+
+        # Build daily breakdown including leaves
+        daily_breakdown = []
+        current_day = monday
+        while current_day <= friday:
+            day_summary = summaries.filter(date=current_day).first()
+            day_leave = emp_leaves.filter(
+                start_date__lte=current_day,
+                end_date__gte=current_day
+            ).first()
+
+            daily_breakdown.append({
+                'date': current_day,
+                'attendance': day_summary,
+                'leave': day_leave,
+            })
+            current_day += timedelta(days=1)
 
         # Calculate totals
         total_hours = sum(s.final_hours for s in summaries if s.final_hours)
@@ -401,6 +580,13 @@ def send_weekly_reports():
             'avg_hours': f"{avg_hours:.1f}",
             'records': summaries,
             'current_year': current_year,
+            'early_bird': early_bird,
+            'overtime_champion': overtime_champion,
+            'leave_records': emp_leaves,
+            'leave_hours': f"{leave_hours:.1f}",
+            'leave_days': leave_days,
+            'total_hours_with_leaves': f"{(total_hours + leave_hours):.1f}",
+            'daily_breakdown': daily_breakdown,
         }
 
         try:

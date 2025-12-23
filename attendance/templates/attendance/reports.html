@@ -132,7 +132,8 @@
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-500 text-sm font-medium">Total Hours</p>
-                        <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_hours|floatformat:1 }}h</p>
+                        <p class="text-3xl font-bold text-gray-800 mt-2">{{ total_hours_with_leaves|floatformat:1 }}h</p>
+                        <p class="text-xs text-gray-400 mt-1">Attendance: {{ total_hours|floatformat:1 }}h + Leave: {{ total_leave_hours|floatformat:1 }}h</p>
                     </div>
                     <div class="bg-purple-100 p-3 rounded-lg">
                         <span class="material-symbols-outlined text-purple-600 text-4xl">schedule</span>
@@ -299,6 +300,73 @@
             <span class="material-symbols-outlined text-gray-300 text-6xl">description</span>
             <h3 class="text-xl font-bold text-gray-800 mt-4">No Records Found</h3>
             <p class="text-gray-500 mt-2">No attendance records found for the selected filters.</p>
+        </div>
+        {% endif %}
+
+        <!-- Leave Records Section -->
+        {% if leaves %}
+        <div class="mt-8 bg-white rounded-xl shadow-md overflow-hidden">
+            <div class="px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <span class="material-symbols-outlined text-white text-3xl">beach_access</span>
+                    <h2 class="text-xl font-bold text-white">Leave Records</h2>
+                </div>
+            </div>
+            <div class="p-6">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hours</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for leave in leaves %}
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm font-medium text-gray-900">{{ leave.employee_name }}</div>
+                                <div class="text-xs text-gray-500">{{ leave.employee_id }}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if leave.leave_type == 'ANNUAL' %}
+                                <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                    {{ leave.get_leave_type_display }}
+                                </span>
+                                {% elif leave.leave_type == 'SICK' %}
+                                <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                    {{ leave.get_leave_type_display }}
+                                </span>
+                                {% else %}
+                                <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                    {{ leave.get_leave_type_display }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ leave.start_date|date:"M d, Y" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ leave.end_date|date:"M d, Y" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ leave.total_days }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="text-sm font-semibold text-green-600">{{ leave.total_hours }}h</span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500">
+                                {{ leave.reason|truncatewords:10|default:"—" }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
         {% endif %}
     </div>

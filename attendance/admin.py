@@ -7,7 +7,7 @@ from unfold.decorators import display
 from unfold.contrib.filters.admin import RangeDateFilter, RangeDateTimeFilter
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
-    TimesheetEdit, EmailLog, SystemSettings, AttendanceReport
+    TimesheetEdit, EmailLog, SystemSettings, AttendanceReport, LeaveRecord
 )
 from . import views
 
@@ -152,6 +152,76 @@ class EmailLogAdmin(ModelAdmin):
         return obj.status
 
 
+@admin.register(LeaveRecord)
+class LeaveRecordAdmin(ModelAdmin):
+    list_display = ['employee_name', 'show_leave_type', 'start_date', 'end_date',
+                    'show_total_days', 'show_total_hours', 'created_at']
+    list_filter = [
+        'leave_type',
+        ('start_date', RangeDateFilter),
+        ('end_date', RangeDateFilter),
+    ]
+    search_fields = ['employee_id', 'employee_name', 'reason',
+                    'selected_employee__employee_name', 'selected_employee__employee_id']
+    readonly_fields = ['employee_id', 'employee_name', 'hours_per_day',
+                      'total_days', 'total_hours', 'created_at', 'created_by']
+    autocomplete_fields = ['selected_employee']
+    list_filter_submit = True
+
+    fieldsets = (
+        ('Employee Information', {
+            'fields': ('selected_employee', 'employee_id', 'employee_name'),
+            'description': 'Employee ID and Name are auto-populated from selected employee'
+        }),
+        ('Leave Details', {
+            'fields': ('leave_type', 'start_date', 'end_date', 'reason')
+        }),
+        ('Hours Calculation', {
+            'fields': ('hours_per_day', 'total_days', 'total_hours'),
+            'description': 'Auto-calculated based on date range and system settings'
+        }),
+        ('Audit Information', {
+            'fields': ('created_at', 'created_by'),
+        }),
+    )
+
+    @display(description="Leave Type", label=True)
+    def show_leave_type(self, obj):
+        return obj.get_leave_type_display()
+
+    @display(description="Days")
+    def show_total_days(self, obj):
+        return f"{obj.total_days} days"
+
+    @display(description="Hours")
+    def show_total_hours(self, obj):
+        return f"{obj.total_hours}h"
+
+    def save_model(self, request, obj, form, change):
+        """Set created_by and trigger email notification"""
+        from .tasks import send_leave_notification
+
+        # Set created_by on creation
+        if not change:
+            obj.created_by = request.user
+
+        super().save_model(request, obj, form, change)
+
+        # Send email notification if enabled and this is a new leave
+        if not change:
+            system_settings = SystemSettings.load()
+            if system_settings.enable_leave_notifications:
+                try:
+                    # Try async first (if Celery is running)
+                    send_leave_notification.delay(obj.id)
+                except Exception as e:
+                    # If Celery broker is not available, send synchronously
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Celery not available, sending email synchronously: {e}")
+                    send_leave_notification(obj.id)
+
+
 @admin.register(SystemSettings)
 class SystemSettingsAdmin(ModelAdmin):
     """Admin interface for system-wide settings (singleton)"""
@@ -177,6 +247,13 @@ class SystemSettingsAdmin(ModelAdmin):
                 'enable_early_clockout_alerts',
             ),
             'description': 'Configure automated email notifications'
+        }),
+        ('Leave Management', {
+            'fields': (
+                'default_leave_hours_per_day',
+                'enable_leave_notifications',
+            ),
+            'description': 'Configure leave tracking settings'
         }),
     )
 

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Approved</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f7fafc; padding: 40px 0;">
+        <tr>
+            <td align="center">
+                <table cellpadding="0" cellspacing="0" border="0" width="600" style="background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); padding: 40px; text-align: center;">
+                            <div style="font-size: 36px; margin-bottom: 10px;">✅</div>
+                            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 600;">Leave Approved</h1>
+                        </td>
+                    </tr>
+
+                    <!-- Greeting -->
+                    <tr>
+                        <td style="padding: 30px 40px 20px 40px;">
+                            <p style="font-size: 16px; color: #2d3748; margin: 0;">Hello {{ employee_name }},</p>
+                            <p style="font-size: 16px; color: #2d3748; margin: 15px 0 0 0;">Your leave has been approved:</p>
+                        </td>
+                    </tr>
+
+                    <!-- Leave Details Box -->
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f7fafc; border-radius: 8px; padding: 25px;">
+                                <tr>
+                                    <td>
+                                        <div style="margin-bottom: 15px;">
+                                            <span style="display: inline-block; background-color: #48bb78; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600;">
+                                                {{ leave_type_display }}
+                                            </span>
+                                        </div>
+
+                                        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #718096; font-size: 14px; width: 120px;">Start Date:</td>
+                                                <td style="padding: 8px 0; color: #2d3748; font-size: 14px; font-weight: 600;">{{ leave_record.start_date|date:"l, F d, Y" }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #718096; font-size: 14px;">End Date:</td>
+                                                <td style="padding: 8px 0; color: #2d3748; font-size: 14px; font-weight: 600;">{{ leave_record.end_date|date:"l, F d, Y" }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #718096; font-size: 14px;">Total Days:</td>
+                                                <td style="padding: 8px 0; color: #2d3748; font-size: 14px; font-weight: 600;">{{ leave_record.total_days }} days</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #718096; font-size: 14px;">Total Hours:</td>
+                                                <td style="padding: 8px 0; color: #2d3748; font-size: 14px; font-weight: 600;">{{ leave_record.total_hours }}h</td>
+                                            </tr>
+                                            {% if leave_record.reason %}
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #718096; font-size: 14px; vertical-align: top;">Reason:</td>
+                                                <td style="padding: 8px 0; color: #2d3748; font-size: 14px;">{{ leave_record.reason }}</td>
+                                            </tr>
+                                            {% endif %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Note -->
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <p style="font-size: 14px; color: #718096; margin: 0; font-style: italic;">
+                                This leave will count toward your worked hours in attendance reports.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f7fafc; padding: 20px 40px; text-align: center; border-top: 1px solid #e2e8f0;">
+                            <p style="margin: 0; font-size: 13px; color: #a0aec0;">
+                                &copy; {% now "Y" %} Attendance System. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

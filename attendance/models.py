@@ -136,6 +136,93 @@ class TimesheetEdit(models.Model):
         return f"{self.employee_name} - {self.field_changed} edited on {self.date}"
 
 
+class LeaveRecord(models.Model):
+    LEAVE_TYPE_CHOICES = [
+        ('ANNUAL', 'Annual Leave'),
+        ('SICK', 'Sick Leave'),
+        ('UNPAID', 'Unpaid Leave'),
+    ]
+
+    # Employee selection (follows DailySummary pattern)
+    selected_employee = models.ForeignKey(
+        EmployeeRegistry,
+        on_delete=models.CASCADE,
+        related_name='leave_records',
+        help_text='Select employee from dropdown'
+    )
+
+    # Denormalized fields (auto-populated)
+    employee_id = models.CharField(max_length=50)
+    employee_name = models.CharField(max_length=200)
+
+    # Leave details
+    leave_type = models.CharField(max_length=20, choices=LEAVE_TYPE_CHOICES)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField(blank=True)
+
+    # Auto-calculated fields
+    hours_per_day = models.DecimalField(max_digits=4, decimal_places=2, default=8.0)
+    total_days = models.IntegerField(default=0)
+    total_hours = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+
+    # Audit trail
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Leave Record'
+        verbose_name_plural = 'Leave Records'
+        ordering = ['-start_date']
+
+    def clean(self):
+        """Validate dates"""
+        from django.core.exceptions import ValidationError
+        if self.end_date < self.start_date:
+            raise ValidationError('End date cannot be before start date')
+
+    def save(self, *args, **kwargs):
+        """Auto-populate fields and calculate totals"""
+        from datetime import timedelta
+        from decimal import Decimal
+
+        # Auto-populate employee fields
+        if self.selected_employee:
+            self.employee_id = self.selected_employee.employee_id
+            self.employee_name = self.selected_employee.employee_name
+
+        # Get hours per day from settings
+        system_settings = SystemSettings.load()
+        self.hours_per_day = system_settings.default_leave_hours_per_day
+
+        # Calculate business days (Mon-Fri only)
+        current_date = self.start_date
+        business_days = 0
+        while current_date <= self.end_date:
+            if current_date.weekday() < 5:  # 0-4 = Monday-Friday
+                business_days += 1
+            current_date += timedelta(days=1)
+
+        self.total_days = business_days
+        self.total_hours = Decimal(str(business_days)) * self.hours_per_day
+
+        super().save(*args, **kwargs)
+
+    def get_dates_list(self):
+        """Return list of business day dates in leave period"""
+        from datetime import timedelta
+        dates = []
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            if current_date.weekday() < 5:
+                dates.append(current_date)
+            current_date += timedelta(days=1)
+        return dates
+
+    def __str__(self):
+        return f"{self.employee_name} - {self.get_leave_type_display()} ({self.start_date} to {self.end_date})"
+
+
 class EmailLog(models.Model):
     STATUS_CHOICES = [
         ('SUCCESS', 'Success'),
@@ -207,6 +294,18 @@ class SystemSettings(models.Model):
     enable_early_clockout_alerts = models.BooleanField(
         default=False,
         help_text='Send alerts when employees clock out before completing required shift hours'
+    )
+
+    # Leave Management
+    default_leave_hours_per_day = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=8.0,
+        help_text='Default hours per day for leave calculations'
+    )
+    enable_leave_notifications = models.BooleanField(
+        default=True,
+        help_text='Send email notifications when leaves are created'
     )
 
     class Meta:

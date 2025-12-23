@@ -9,7 +9,7 @@ import pytz
 import json
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
-    TimesheetEdit, EmailLog, SystemSettings
+    TimesheetEdit, EmailLog, SystemSettings, LeaveRecord
 )
 
 
@@ -358,6 +358,19 @@ def reports_view(request):
     # Get summaries ordered by date and employee name
     summaries = summaries_query.order_by('-date', 'employee_name')
 
+    # Query leave records for same date range and employee filter
+    leave_filter = {'start_date__lte': date_end, 'end_date__gte': date_start}
+    if employee_id:
+        leave_filter['employee_id'] = employee_id
+
+    leaves = LeaveRecord.objects.filter(**leave_filter).select_related('selected_employee').order_by('-start_date')
+
+    # Calculate leave totals
+    leave_totals = leaves.aggregate(
+        total_leave_hours=Sum('total_hours'),
+        total_leave_days=Sum('total_days')
+    )
+
     # Calculate statistics
     total_hours = summaries.aggregate(total=Sum('final_hours'))['total'] or Decimal('0')
     total_days = summaries.values('date').distinct().count()
@@ -405,6 +418,10 @@ def reports_view(request):
         'selected_employee_id': employee_id,
         'start_date': start_date,
         'end_date': end_date,
+        'leaves': leaves,
+        'total_leave_hours': leave_totals['total_leave_hours'] or Decimal('0'),
+        'total_leave_days': leave_totals['total_leave_days'] or 0,
+        'total_hours_with_leaves': total_hours + (leave_totals['total_leave_hours'] or Decimal('0')),
     }
 
     return render(request, 'attendance/reports.html', context)
@@ -496,6 +513,39 @@ def export_csv(request):
             str(summary.final_hours),
             summary.get_current_status_display(),
             summary.tap_count
+        ])
+
+    # Add leave records section
+    writer.writerow([])  # Blank line
+    writer.writerow(['LEAVE RECORDS'])
+    writer.writerow([
+        'Employee ID',
+        'Employee Name',
+        'Leave Type',
+        'Start Date',
+        'End Date',
+        'Total Days',
+        'Total Hours',
+        'Reason'
+    ])
+
+    # Query and write leave records
+    leave_filter = {'start_date__lte': date_end, 'end_date__gte': date_start}
+    if employee_id:
+        leave_filter['employee_id'] = employee_id
+
+    leaves = LeaveRecord.objects.filter(**leave_filter).order_by('start_date')
+
+    for leave in leaves:
+        writer.writerow([
+            leave.employee_id,
+            leave.employee_name,
+            leave.get_leave_type_display(),
+            leave.start_date.strftime('%Y-%m-%d'),
+            leave.end_date.strftime('%Y-%m-%d'),
+            leave.total_days,
+            float(leave.total_hours),
+            leave.reason
         ])
 
     return response
@@ -645,6 +695,50 @@ def export_pdf(request):
     ]))
 
     elements.append(table)
+
+    # Add leave records section
+    from reportlab.lib.colors import HexColor
+
+    leave_filter = {'start_date__lte': date_end, 'end_date__gte': date_start}
+    if employee_id:
+        leave_filter['employee_id'] = employee_id
+
+    leaves = LeaveRecord.objects.filter(**leave_filter).order_by('start_date')
+
+    if leaves.exists():
+        elements.append(Spacer(1, 0.3*inch))
+        leave_title = Paragraph('Leave Records', styles['Heading2'])
+        elements.append(leave_title)
+        elements.append(Spacer(1, 0.1*inch))
+
+        leave_data = [['Employee', 'Type', 'Start Date', 'End Date', 'Days', 'Hours']]
+        for leave in leaves:
+            leave_data.append([
+                leave.employee_name[:20],
+                leave.get_leave_type_display(),
+                leave.start_date.strftime('%Y-%m-%d'),
+                leave.end_date.strftime('%Y-%m-%d'),
+                str(leave.total_days),
+                f'{leave.total_hours}h'
+            ])
+
+        leave_table = Table(leave_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch, 0.7*inch, 0.8*inch])
+        leave_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#48bb78')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), HexColor('#f0fdf4')),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2d3748')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(leave_table)
 
     # Build PDF
     doc.build(elements)

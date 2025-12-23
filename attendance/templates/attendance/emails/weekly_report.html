@@ -59,7 +59,7 @@
         }
         .stats-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
             gap: 15px;
             margin: 20px 0;
         }
@@ -175,12 +175,20 @@
                 <h2>Week at a Glance</h2>
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-label">Total Hours</div>
-                        <div class="stat-value">{{ total_hours }}h</div>
+                        <div class="stat-label">Attendance</div>
+                        <div class="stat-value" style="color: #805ad5;">{{ total_hours }}h</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Days Worked</div>
-                        <div class="stat-value">{{ days_worked }}/5</div>
+                        <div class="stat-value" style="color: #805ad5;">{{ days_worked }}/5</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Leave Hours</div>
+                        <div class="stat-value" style="color: #48bb78;">{{ leave_hours }}h</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total Hours</div>
+                        <div class="stat-value" style="color: #2d3748;">{{ total_hours_with_leaves }}h</div>
                     </div>
                 </div>
             </div>
@@ -199,26 +207,34 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for record in records %}
+                    {% for day in daily_breakdown %}
                     <tr>
-                        <td class="day-label">{{ record.date|date:"D, M d" }}</td>
+                        <td class="day-label">{{ day.date|date:"D, M d" }}</td>
                         <td>
-                            {% if record.first_clock_in %}
-                                {{ record.first_clock_in|time:"g:i A" }}
+                            {% if day.leave %}
+                                <span style="color: #48bb78; font-weight: 600;">{{ day.leave.get_leave_type_display }}</span>
+                            {% elif day.attendance and day.attendance.first_clock_in %}
+                                {{ day.attendance.first_clock_in|time:"g:i A" }}
                             {% else %}
                                 <span style="color: #999;">—</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if record.last_clock_out %}
-                                {{ record.last_clock_out|time:"g:i A" }}
+                            {% if day.leave %}
+                                <span style="color: #999;">—</span>
+                            {% elif day.attendance and day.attendance.last_clock_out %}
+                                {{ day.attendance.last_clock_out|time:"g:i A" }}
                             {% else %}
                                 <span style="color: #999;">—</span>
                             {% endif %}
                         </td>
                         <td style="text-align: right;">
-                            {% if record.final_hours %}
-                                <span class="hours-badge">{{ record.final_hours }}h</span>
+                            {% if day.leave %}
+                                <span style="background: #c6f6d5; color: #22543d; display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: 13px;">
+                                    {{ day.leave.hours_per_day }}h (Leave)
+                                </span>
+                            {% elif day.attendance and day.attendance.final_hours %}
+                                <span class="hours-badge">{{ day.attendance.final_hours }}h</span>
                             {% else %}
                                 <span style="color: #999;">—</span>
                             {% endif %}
@@ -227,7 +243,7 @@
                     {% empty %}
                     <tr>
                         <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
-                            No attendance records for this week
+                            No attendance or leave records for this week
                         </td>
                     </tr>
                     {% endfor %}
@@ -239,6 +255,61 @@
                 <p style="margin: 0; color: #666; font-size: 14px;">
                     Average: <strong style="color: #667eea;">{{ avg_hours }}h per day</strong>
                 </p>
+            </div>
+            {% endif %}
+
+            {% if leave_records %}
+            <div class="divider"></div>
+
+            <!-- Leave Summary -->
+            <h3 style="color: #333; margin-bottom: 15px;">🏖️ Leave Summary</h3>
+            <div style="background: #f0fdf4; border-left: 4px solid #48bb78; padding: 20px; border-radius: 8px;">
+                {% for leave in leave_records %}
+                <div style="margin-bottom: {% if not forloop.last %}15px{% else %}0{% endif %}; padding-bottom: {% if not forloop.last %}15px{% else %}0{% endif %}; {% if not forloop.last %}border-bottom: 1px solid #e0e0e0;{% endif %}">
+                    <div style="margin-bottom: 5px;">
+                        <span style="background: #48bb78; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                            {{ leave.get_leave_type_display }}
+                        </span>
+                    </div>
+                    <div style="color: #2d3748; font-size: 14px; font-weight: 600; margin-bottom: 3px;">
+                        {{ leave.start_date|date:"M d" }} - {{ leave.end_date|date:"M d, Y" }}
+                        <span style="color: #718096; font-weight: normal;">({{ leave.total_days }} days, {{ leave.total_hours }}h)</span>
+                    </div>
+                    {% if leave.reason %}
+                    <div style="color: #718096; font-size: 13px; font-style: italic;">{{ leave.reason }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if early_bird or overtime_champion %}
+            <div class="divider"></div>
+
+            <!-- Weekly Highlights -->
+            <h3 style="color: #333; margin-bottom: 15px;">🏆 Weekly Highlights</h3>
+            <div style="background: linear-gradient(to bottom, #FFF9C4 0%, #FFF176 100%); padding: 20px; border-radius: 8px; color: #333; box-shadow: 0 4px 6px rgba(255, 241, 118, 0.3);">
+                {% if early_bird %}
+                <div style="margin-bottom: 15px;">
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 5px;">
+                        🌅 Early Bird of the Week
+                    </div>
+                    <div style="font-size: 16px; opacity: 0.95;">
+                        <strong>{{ early_bird.name }}</strong> - Avg arrival: {{ early_bird.avg_time }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if overtime_champion %}
+                <div>
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 5px;">
+                        💪 Overtime Champion
+                    </div>
+                    <div style="font-size: 16px; opacity: 0.95;">
+                        <strong>{{ overtime_champion.name }}</strong> - Total: {{ overtime_champion.total_hours }}h
+                    </div>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
         </div>
