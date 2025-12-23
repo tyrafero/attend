@@ -7,15 +7,33 @@ Type=forking
 User=vboxuser
 Group=vboxuser
 WorkingDirectory=/home/vboxuser/Documents/attend
-Environment="PATH=/home/vboxuser/Documents/attend/env/bin"
+
+# Environment variables
+EnvironmentFile=/home/vboxuser/Documents/attend/.env
+Environment="PATH=/home/vboxuser/Documents/attend/env/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DJANGO_SETTINGS_MODULE=attendance_system.settings"
+
+# Celery worker command
 ExecStart=/home/vboxuser/Documents/attend/env/bin/celery -A attendance_system worker \
-    --detach \
-    --logfile=/home/vboxuser/Documents/attend/logs/celery-worker.log \
     --loglevel=info \
-    --pidfile=/home/vboxuser/Documents/attend/logs/celery-worker.pid
-ExecStop=/bin/kill -TERM $MAINPID
-Restart=no
+    --concurrency=2 \
+    --max-tasks-per-child=100 \
+    --pidfile=/var/run/celery/worker.pid \
+    --logfile=/var/log/celery/worker.log \
+    --detach
+
+# Process management
+PIDFile=/var/run/celery/worker.pid
+Restart=always
 RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+# Create runtime directories
+RuntimeDirectory=celery
+RuntimeDirectoryMode=0755
+LogsDirectory=celery
+LogsDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
