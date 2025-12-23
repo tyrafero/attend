@@ -158,8 +158,10 @@ class LeaveRecordAdmin(ModelAdmin):
                     'show_total_days', 'show_total_hours', 'created_at']
     list_filter = [
         'leave_type',
+        'selected_employee',  # Filter by employee
         ('start_date', RangeDateFilter),
         ('end_date', RangeDateFilter),
+        'created_by',  # Filter by who created the leave
     ]
     search_fields = ['employee_id', 'employee_name', 'reason',
                     'selected_employee__employee_name', 'selected_employee__employee_id']
