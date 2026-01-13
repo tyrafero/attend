@@ -339,3 +339,467 @@ class AttendanceReport(models.Model):
         verbose_name_plural = 'Attendance Reports'
         app_label = 'attendance'
         # This will make it appear in the admin under a "Reports" section
+
+
+# ============================================================================
+# V2 MODELS - New architecture with User authentication and department structure
+# ============================================================================
+
+class Department(models.Model):
+    """Department model for organizing employees (Offshore, IT, Admin, Warehouse)"""
+    DEPARTMENT_CODES = [
+        ('OFFS', 'Offshore'),
+        ('IT', 'IT'),
+        ('ADM', 'Admin'),
+        ('WARE', 'Warehouse'),
+    ]
+
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=20, unique=True, choices=DEPARTMENT_CODES)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Manager will be set after EmployeeProfile is created (nullable)
+    manager = models.ForeignKey(
+        'EmployeeProfile',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='managed_departments',
+        help_text='Department manager'
+    )
+
+    class Meta:
+        verbose_name = 'Department'
+        verbose_name_plural = 'Departments'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class Shift(models.Model):
+    """Shift templates (e.g., Morning Shift 7 AM - 3 PM)"""
+    SHIFT_CODES = [
+        ('MORN', 'Morning'),
+        ('DAY', 'Day'),
+        ('EVE', 'Evening'),
+        ('NIGHT', 'Night'),
+    ]
+
+    name = models.CharField(max_length=100, help_text='e.g., Morning Shift, Day Shift')
+    code = models.CharField(max_length=20, unique=True, choices=SHIFT_CODES)
+
+    # Time windows
+    start_time = models.TimeField(help_text='Shift start time (e.g., 07:00)')
+    end_time = models.TimeField(help_text='Shift end time (e.g., 15:00)')
+
+    # Duration config
+    scheduled_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=8.0,
+        help_text='Scheduled shift duration (hours)'
+    )
+    break_duration_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0.5,
+        help_text='Break duration (hours)'
+    )
+
+    # Variance tolerances for Early Bird detection
+    early_arrival_grace_minutes = models.IntegerField(
+        default=15,
+        help_text='Minutes early is considered normal (beyond this = Early Bird)'
+    )
+    late_departure_grace_minutes = models.IntegerField(
+        default=15,
+        help_text='Minutes late is considered normal'
+    )
+
+    # Optional department-specific shifts
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name='shifts',
+        null=True,
+        blank=True,
+        help_text='Department this shift belongs to (optional)'
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Shift'
+        verbose_name_plural = 'Shifts'
+        ordering = ['start_time']
+
+    def __str__(self):
+        return f"{self.name} ({self.start_time} - {self.end_time})"
+
+
+class EmployeeProfile(models.Model):
+    """Extended employee profile linked to Django User for authentication"""
+    ROLE_CHOICES = [
+        ('EMPLOYEE', 'Employee'),
+        ('MANAGER', 'Manager'),
+        ('HR_ADMIN', 'HR/Admin'),
+    ]
+
+    # Link to Django User (for username/password auth)
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='employee_profile',
+        help_text='Django user account for login'
+    )
+
+    # Employee details (from v1 EmployeeRegistry)
+    employee_id = models.CharField(max_length=50, unique=True, help_text='Unique employee ID')
+    employee_name = models.CharField(max_length=200)
+    email = models.EmailField()
+
+    # PIN authentication (HASHED for security)
+    pin_hash = models.CharField(
+        max_length=128,
+        help_text='Hashed PIN for kiosk clock in/out'
+    )
+    pin_updated_at = models.DateTimeField(auto_now_add=True)
+
+    # Department and role
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.PROTECT,
+        related_name='employees',
+        help_text='Employee department'
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default='EMPLOYEE',
+        help_text='User role (Employee, Manager, HR/Admin)'
+    )
+
+    # Shift assignment
+    default_shift = models.ForeignKey(
+        Shift,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+        help_text='Default shift for this employee'
+    )
+
+    # Manager assignment (for employees only)
+    manager = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_members',
+        help_text='Direct manager (for employees only)'
+    )
+
+    # NFC (keep backward compatibility from v1)
+    nfc_id = models.CharField(
+        max_length=100,
+        blank=True,
+        unique=True,
+        null=True,
+        help_text='NFC card ID (optional)'
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Employee Profile (V2)'
+        verbose_name_plural = 'Employee Profiles (V2)'
+        ordering = ['employee_name']
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.employee_name} ({self.get_role_display()})"
+
+    def is_manager_or_above(self):
+        """Check if user is manager or HR"""
+        return self.role in ['MANAGER', 'HR_ADMIN']
+
+    def is_hr_admin(self):
+        """Check if user is HR admin"""
+        return self.role == 'HR_ADMIN'
+
+
+class ShiftAssignment(models.Model):
+    """Daily shift assignments for employees (allows custom shifts and pre-approvals)"""
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name='shift_assignments',
+        help_text='Employee assigned to this shift'
+    )
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.CASCADE,
+        help_text='Shift template'
+    )
+    date = models.DateField(help_text='Date for this shift assignment')
+
+    # Custom overrides (optional)
+    custom_start_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text='Custom start time (overrides shift template)'
+    )
+    custom_end_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text='Custom end time (overrides shift template)'
+    )
+
+    # Pre-approved early/overtime (for TIL calculation)
+    pre_approved_early_start = models.BooleanField(
+        default=False,
+        help_text='Manager pre-approved early start'
+    )
+    pre_approved_overtime = models.BooleanField(
+        default=False,
+        help_text='Manager pre-approved overtime'
+    )
+    approved_early_minutes = models.IntegerField(
+        default=0,
+        help_text='Pre-approved early start minutes'
+    )
+    approved_overtime_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        help_text='Pre-approved overtime hours'
+    )
+
+    # Approval tracking
+    approved_by = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_shift_assignments',
+        help_text='Manager who approved'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Shift Assignment'
+        verbose_name_plural = 'Shift Assignments'
+        unique_together = ['employee', 'date']
+        ordering = ['-date', 'employee__employee_name']
+
+    def __str__(self):
+        return f"{self.employee.employee_name} - {self.shift.name} on {self.date}"
+
+    def get_effective_start_time(self):
+        """Get actual start time (custom or shift template)"""
+        return self.custom_start_time if self.custom_start_time else self.shift.start_time
+
+    def get_effective_end_time(self):
+        """Get actual end time (custom or shift template)"""
+        return self.custom_end_time if self.custom_end_time else self.shift.end_time
+
+
+class TILRecord(models.Model):
+    """Time in Lieu records - tracks TIL earned and used"""
+    TIL_TYPE_CHOICES = [
+        ('EARNED_EARLY', 'Earned - Manager-Approved Early Start'),
+        ('EARNED_OT', 'Earned - Manager-Approved Overtime'),
+        ('USED', 'Used - TIL Leave'),
+        ('ADJUSTED', 'Manual Adjustment'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name='til_records',
+        help_text='Employee'
+    )
+
+    til_type = models.CharField(max_length=20, choices=TIL_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+
+    # Hours earned/used (positive for earned, negative for used)
+    hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        help_text='Positive for earned, negative for used'
+    )
+
+    # Reference to attendance record (if applicable)
+    daily_summary = models.ForeignKey(
+        DailySummary,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='til_records',
+        help_text='Related daily summary'
+    )
+
+    # Date and reason
+    date = models.DateField(help_text='Date TIL was earned/used')
+    reason = models.TextField(help_text='Reason for TIL')
+
+    # Approval workflow
+    requested_by = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='til_requests',
+        help_text='Who requested this TIL'
+    )
+    approved_by = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='til_approvals',
+        help_text='Manager who approved/rejected'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'TIL Record'
+        verbose_name_plural = 'TIL Records'
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"{self.employee.employee_name} - {self.get_til_type_display()} ({self.hours}h) - {self.get_status_display()}"
+
+
+class TILBalance(models.Model):
+    """Cached TIL balance per employee for quick lookups"""
+    employee = models.OneToOneField(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name='til_balance',
+        help_text='Employee'
+    )
+
+    # Balance tracking
+    total_earned = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text='Total hours earned'
+    )
+    total_used = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text='Total hours used'
+    )
+    current_balance = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text='Current balance (earned - used)'
+    )
+
+    # Metadata
+    last_calculated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'TIL Balance'
+        verbose_name_plural = 'TIL Balances'
+        ordering = ['employee__employee_name']
+
+    def __str__(self):
+        return f"{self.employee.employee_name} - {self.current_balance}h"
+
+    def recalculate(self):
+        """Recalculate balance from approved TIL records"""
+        from decimal import Decimal
+        from django.db.models import Sum
+
+        approved_records = self.employee.til_records.filter(status='APPROVED')
+
+        # Calculate earned (positive hours)
+        earned = approved_records.filter(
+            til_type__in=['EARNED_EARLY', 'EARNED_OT']
+        ).aggregate(total=Sum('hours'))['total'] or Decimal('0')
+
+        # Calculate used (negative hours, so we take absolute value)
+        used = approved_records.filter(
+            til_type='USED'
+        ).aggregate(total=Sum('hours'))['total'] or Decimal('0')
+
+        # Calculate adjustments
+        adjusted = approved_records.filter(
+            til_type='ADJUSTED'
+        ).aggregate(total=Sum('hours'))['total'] or Decimal('0')
+
+        self.total_earned = earned + adjusted
+        self.total_used = abs(used)  # Store as positive number
+        self.current_balance = self.total_earned - self.total_used
+        self.save()
+
+
+class PINHistory(models.Model):
+    """Audit trail for PIN changes"""
+    CHANGE_REASON_CHOICES = [
+        ('SELF_CHANGE', 'Employee Self-Change'),
+        ('HR_RESET', 'HR Reset'),
+        ('INITIAL_SETUP', 'Initial Setup'),
+    ]
+
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name='pin_history',
+        help_text='Employee'
+    )
+
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='pin_changes_made',
+        help_text='User who made the change'
+    )
+
+    change_reason = models.CharField(
+        max_length=50,
+        choices=CHANGE_REASON_CHOICES,
+        help_text='Reason for PIN change'
+    )
+
+    old_pin_hash = models.CharField(max_length=128, blank=True)
+    new_pin_hash = models.CharField(max_length=128)
+
+    changed_at = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'PIN History'
+        verbose_name_plural = 'PIN History'
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f"{self.employee.employee_name} - {self.get_change_reason_display()} at {self.changed_at}"
