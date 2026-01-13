@@ -24,5 +24,9 @@ urlpatterns = [
     path('django-admin/reports/', staff_member_required(attendance_views.reports_view), name='admin_reports'),
     path('django-admin/reports/export/csv/', staff_member_required(attendance_views.export_csv), name='admin_export_csv'),
     path('django-admin/reports/export/pdf/', staff_member_required(attendance_views.export_pdf), name='admin_export_pdf'),
+
+    # V2 REST API endpoints
+    path('api/', include('attendance.api.urls')),
+
     path('', include('attendance.urls')),  # Attendance app URLs
 ]
