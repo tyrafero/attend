@@ -1,13 +1,23 @@
 """
 API URL routing for v2 REST endpoints
 """
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from . import views
+from . import attendance_views
 
 app_name = 'api'
+
+# Create router for ViewSets
+router = DefaultRouter()
+router.register(r'departments', attendance_views.DepartmentViewSet, basename='department')
+router.register(r'shifts', attendance_views.ShiftViewSet, basename='shift')
+router.register(r'employees', attendance_views.EmployeeProfileViewSet, basename='employee')
+router.register(r'attendance/daily-summary', attendance_views.DailySummaryViewSet, basename='daily-summary')
+router.register(r'attendance/taps', attendance_views.AttendanceTapViewSet, basename='attendance-tap')
 
 urlpatterns = [
     # Authentication endpoints
@@ -20,6 +30,14 @@ urlpatterns = [
 
     # User endpoints
     path('auth/me/', views.current_user_view, name='current-user'),
+
+    # Attendance endpoints
+    path('attendance/clock/', attendance_views.clock_action_view, name='clock-action'),
+    path('attendance/me/current/', attendance_views.current_status_view, name='current-status'),
+    path('attendance/me/summary/', attendance_views.my_attendance_summary_view, name='my-summary'),
+
+    # Include router URLs
+    path('', include(router.urls)),
 
     # API Documentation (Swagger/OpenAPI)
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
