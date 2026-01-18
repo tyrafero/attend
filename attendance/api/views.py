@@ -209,6 +209,47 @@ def reset_pin_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['POST'])
+@permission_classes([IsEmployee])
+def change_password_view(request):
+    """
+    Change user's password (requires old password verification)
+    """
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+
+    if not old_password or not new_password:
+        return Response(
+            {'error': 'Both old_password and new_password are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = request.user
+
+    # Verify old password
+    if not user.check_password(old_password):
+        return Response(
+            {'old_password': ['Incorrect password']},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate new password length
+    if len(new_password) < 6:
+        return Response(
+            {'new_password': ['Password must be at least 6 characters']},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Set new password
+    user.set_password(new_password)
+    user.save()
+
+    return Response(
+        {'message': 'Password changed successfully'},
+        status=status.HTTP_200_OK
+    )
+
+
 def get_client_ip(request):
     """Get client IP address from request"""
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')

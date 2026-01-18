@@ -1,12 +1,18 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { ClockInOut } from '../components/ClockInOut';
+import { SettingsModal } from '../components/SettingsModal';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceApi } from '../api/attendance';
+import { tilApi } from '../api/til';
 
 export function DashboardPage() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [showSettings, setShowSettings] = useState(false);
+
+  const isAuthenticated = !!user?.employee_profile;
 
   // Get attendance summary for last 30 days
   const { data: attendanceSummary, isLoading } = useQuery({
@@ -18,6 +24,14 @@ export function DashboardPage() {
         .split('T')[0];
       return attendanceApi.getMySummary(startDate, endDate);
     },
+    enabled: isAuthenticated,
+  });
+
+  // Get TIL balance
+  const { data: tilBalance } = useQuery({
+    queryKey: ['til', 'balance'],
+    queryFn: tilApi.getMyBalance,
+    enabled: isAuthenticated,
   });
 
   const handleLogout = async () => {
@@ -56,6 +70,36 @@ export function DashboardPage() {
             </div>
             <div className="flex items-center gap-3">
               <a
+                href="/leave"
+                className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                style={{ color: '#667eea' }}
+              >
+                Leave
+              </a>
+              <a
+                href="/til"
+                className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                style={{ color: '#667eea' }}
+              >
+                TIL
+              </a>
+              {(user?.employee_profile?.role === 'MANAGER' || user?.employee_profile?.role === 'HR_ADMIN') && (
+                <a
+                  href="/shifts"
+                  className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  style={{ color: '#667eea' }}
+                >
+                  Shifts
+                </a>
+              )}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                style={{ color: '#667eea' }}
+              >
+                ⚙️ Settings
+              </button>
+              <a
                 href="/"
                 className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                 style={{ color: '#667eea' }}
@@ -77,7 +121,7 @@ export function DashboardPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-lg p-4">
             <p className="text-gray-500 text-xs uppercase tracking-wide">Today's Status</p>
             <p className="text-2xl font-bold text-gray-900">
@@ -100,6 +144,15 @@ export function DashboardPage() {
             <p className="text-gray-500 text-xs uppercase tracking-wide">Days Worked</p>
             <p className="text-2xl font-bold text-gray-900">
               {attendanceSummary?.filter(r => Number(r.final_hours) > 0).length || 0}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-lg p-4">
+            <p className="text-gray-500 text-xs uppercase tracking-wide">TIL Balance</p>
+            <p className="text-2xl font-bold" style={{ color: Number(tilBalance?.current_balance || 0) > 0 ? '#10b981' : '#667eea' }}>
+              {tilBalance?.current_balance || '0.00'}h
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Earned: {tilBalance?.total_earned || '0'}h | Used: {tilBalance?.total_used || '0'}h
             </p>
           </div>
         </div>
@@ -184,6 +237,9 @@ export function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }

@@ -5,7 +5,8 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import check_password, make_password
 from attendance.models import (
-    EmployeeProfile, Department, Shift, DailySummary, AttendanceTap
+    EmployeeProfile, Department, Shift, DailySummary, AttendanceTap,
+    ShiftAssignment, TILRecord, TILBalance, LeaveRecord
 )
 
 
@@ -269,3 +270,102 @@ class CurrentStatusSerializer(serializers.Serializer):
     hours_worked = serializers.DecimalField(max_digits=5, decimal_places=2)
     tap_count = serializers.IntegerField()
     date = serializers.DateField()
+
+
+# ============================================================================
+# Phase 3: Shift Assignment and TIL Serializers
+# ============================================================================
+
+class ShiftAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for ShiftAssignment"""
+    employee_name = serializers.CharField(source='employee.employee_name', read_only=True)
+    shift_name = serializers.CharField(source='shift.name', read_only=True)
+    shift_start = serializers.TimeField(source='shift.start_time', read_only=True)
+    shift_end = serializers.TimeField(source='shift.end_time', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.employee_name', read_only=True, allow_null=True)
+
+    class Meta:
+        model = ShiftAssignment
+        fields = [
+            'id', 'employee', 'employee_name', 'shift', 'shift_name',
+            'shift_start', 'shift_end', 'date',
+            'custom_start_time', 'custom_end_time',
+            'pre_approved_early_start', 'pre_approved_overtime',
+            'approved_early_minutes', 'approved_overtime_hours',
+            'approved_by', 'approved_by_name', 'approved_at',
+            'notes', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'approved_at']
+
+
+class TILRecordSerializer(serializers.ModelSerializer):
+    """Serializer for TIL records"""
+    employee_name = serializers.CharField(source='employee.employee_name', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.employee_name', read_only=True, allow_null=True)
+    til_type_display = serializers.CharField(source='get_til_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = TILRecord
+        fields = [
+            'id', 'employee', 'employee_name',
+            'til_type', 'til_type_display', 'status', 'status_display',
+            'hours', 'date', 'reason',
+            'approved_by', 'approved_by_name', 'approved_at', 'rejection_reason',
+            'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'approved_at']
+
+
+class TILBalanceSerializer(serializers.ModelSerializer):
+    """Serializer for TIL balance"""
+    employee_name = serializers.CharField(source='employee.employee_name', read_only=True)
+    employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
+
+    class Meta:
+        model = TILBalance
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_id',
+            'total_earned', 'total_used', 'current_balance',
+            'last_calculated_at'
+        ]
+        read_only_fields = ['id', 'last_calculated_at']
+
+
+# ============================================================================
+# Phase 5: Leave Management Serializers
+# ============================================================================
+
+class LeaveRecordSerializer(serializers.ModelSerializer):
+    """Serializer for leave records"""
+    employee_name = serializers.CharField(read_only=True)
+    employee_id = serializers.CharField(read_only=True)
+    leave_type_display = serializers.CharField(source='get_leave_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.employee_name', read_only=True, allow_null=True)
+
+    class Meta:
+        model = LeaveRecord
+        fields = [
+            'id', 'employee_profile', 'employee_id', 'employee_name',
+            'leave_type', 'leave_type_display',
+            'start_date', 'end_date', 'reason',
+            'status', 'status_display',
+            'approved_by', 'approved_by_name', 'approved_at',
+            'rejection_reason', 'manager_comments',
+            'hours_per_day', 'total_days', 'total_hours',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'employee_id', 'employee_name',
+            'approved_by', 'approved_at',
+            'hours_per_day', 'total_days', 'total_hours',
+            'created_at', 'updated_at'
+        ]
+
+    def create(self, validated_data):
+        # Set employee_profile from current user
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'employee_profile'):
+            validated_data['employee_profile'] = request.user.employee_profile
+        return super().create(validated_data)

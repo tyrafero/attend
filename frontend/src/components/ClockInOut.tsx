@@ -17,20 +17,26 @@ export function ClockInOut() {
   }, []);
 
   // Get current status with polling
-  const { data: currentStatus, isLoading: statusLoading } = useQuery({
+  const { data: currentStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ['attendance', 'current'],
     queryFn: attendanceApi.getCurrentStatus,
     refetchInterval: 30000, // Poll every 30 seconds
+    staleTime: 0, // Always consider data stale
   });
 
   // Clock in/out mutation
   const clockMutation = useMutation({
     mutationFn: () => attendanceApi.clock(),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setMessage(data.message);
       setMessageType('success');
-      // Refetch data
+
+      // Force refetch status immediately
+      await refetchStatus();
+
+      // Also invalidate all attendance queries
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
+
       setTimeout(() => setMessage(''), 3000);
     },
     onError: (error: any) => {
@@ -44,7 +50,7 @@ export function ClockInOut() {
     clockMutation.mutate();
   };
 
-  const isClockIn = currentStatus?.current_status !== 'IN';
+  const isCurrentlyIn = currentStatus?.current_status === 'IN';
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -70,17 +76,17 @@ export function ClockInOut() {
         ) : (
           <span
             className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold ${
-              currentStatus?.current_status === 'IN'
+              isCurrentlyIn
                 ? 'bg-green-100 text-green-700'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full mr-2 ${
-                currentStatus?.current_status === 'IN' ? 'bg-green-500' : 'bg-gray-400'
+                isCurrentlyIn ? 'bg-green-500' : 'bg-gray-400'
               }`}
             ></span>
-            {currentStatus?.current_status === 'IN' ? 'Currently Clocked In' : 'Currently Clocked Out'}
+            {isCurrentlyIn ? 'Currently Clocked In' : 'Currently Clocked Out'}
           </span>
         )}
       </div>
@@ -128,14 +134,14 @@ export function ClockInOut() {
         disabled={clockMutation.isPending}
         className={`w-full py-4 px-6 rounded-xl text-white font-bold text-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none`}
         style={{
-          background: isClockIn
+          background: !isCurrentlyIn
             ? 'linear-gradient(135deg, #51cf66 0%, #40c057 100%)'
             : 'linear-gradient(135deg, #ff6b6b 0%, #fa5252 100%)',
         }}
       >
         {clockMutation.isPending
           ? 'Processing...'
-          : isClockIn
+          : !isCurrentlyIn
           ? '✓ Clock In'
           : '✗ Clock Out'}
       </button>

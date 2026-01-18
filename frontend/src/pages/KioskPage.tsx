@@ -8,6 +8,13 @@ export function KioskPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<ClockActionResponse | null>(null);
 
+  // Clear any existing JWT session when entering kiosk mode
+  useEffect(() => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+  }, []);
+
   const handlePinInput = (digit: string) => {
     if (pin.length < 6) {
       setPin(pin + digit);

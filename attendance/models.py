@@ -141,14 +141,34 @@ class LeaveRecord(models.Model):
         ('ANNUAL', 'Annual Leave'),
         ('SICK', 'Sick Leave'),
         ('UNPAID', 'Unpaid Leave'),
+        ('TIL', 'Time in Lieu'),
     ]
 
-    # Employee selection (follows DailySummary pattern)
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    # Employee selection (follows DailySummary pattern) - V1 compatibility
     selected_employee = models.ForeignKey(
         EmployeeRegistry,
         on_delete=models.CASCADE,
         related_name='leave_records',
-        help_text='Select employee from dropdown'
+        null=True,
+        blank=True,
+        help_text='Select employee from dropdown (V1)'
+    )
+
+    # V2 Employee Profile link
+    employee_profile = models.ForeignKey(
+        'EmployeeProfile',
+        on_delete=models.CASCADE,
+        related_name='leave_records',
+        null=True,
+        blank=True,
+        help_text='Employee profile (V2)'
     )
 
     # Denormalized fields (auto-populated)
@@ -161,6 +181,20 @@ class LeaveRecord(models.Model):
     end_date = models.DateField()
     reason = models.TextField(blank=True)
 
+    # Status and approval workflow
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    approved_by = models.ForeignKey(
+        'EmployeeProfile',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_leaves',
+        help_text='Manager who approved/rejected'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, help_text='Reason for rejection')
+    manager_comments = models.TextField(blank=True, help_text='Manager comments')
+
     # Auto-calculated fields
     hours_per_day = models.DecimalField(max_digits=4, decimal_places=2, default=8.0)
     total_days = models.IntegerField(default=0)
@@ -168,6 +202,7 @@ class LeaveRecord(models.Model):
 
     # Audit trail
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
@@ -186,8 +221,12 @@ class LeaveRecord(models.Model):
         from datetime import timedelta
         from decimal import Decimal
 
-        # Auto-populate employee fields
-        if self.selected_employee:
+        # Auto-populate employee fields from V2 EmployeeProfile
+        if self.employee_profile:
+            self.employee_id = self.employee_profile.employee_id
+            self.employee_name = self.employee_profile.employee_name
+        # Fallback to V1 selected_employee
+        elif self.selected_employee:
             self.employee_id = self.selected_employee.employee_id
             self.employee_name = self.selected_employee.employee_name
 

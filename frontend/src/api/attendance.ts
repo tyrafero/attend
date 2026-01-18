@@ -1,6 +1,39 @@
 import apiClient from './client';
 import type { ClockActionResponse, CurrentStatus, DailySummary } from '../types';
 
+export interface Employee {
+  id: number;
+  employee_id: string;
+  employee_name: string;
+  email: string;
+  department: number;
+  department_name: string;
+  role: string;
+  manager: number | null;
+  manager_name: string | null;
+  is_active: boolean;
+}
+
+export const employeeApi = {
+  // Get all employees (for managers/HR)
+  getEmployees: async (): Promise<Employee[]> => {
+    const response = await apiClient.get('/api/employees/');
+    return response.data;
+  },
+
+  // Get team members (for managers)
+  getTeam: async (): Promise<Employee[]> => {
+    const response = await apiClient.get('/api/employees/team/');
+    return response.data;
+  },
+
+  // Get current user's profile
+  getMe: async (): Promise<Employee> => {
+    const response = await apiClient.get('/api/employees/me/');
+    return response.data;
+  },
+};
+
 export const attendanceApi = {
   // Clock in/out
   clock: async (data?: { pin?: string; nfc_id?: string }): Promise<ClockActionResponse> => {
