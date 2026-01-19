@@ -18,13 +18,21 @@ export const employeeApi = {
   // Get all employees (for managers/HR)
   getEmployees: async (): Promise<Employee[]> => {
     const response = await apiClient.get('/api/employees/');
-    return response.data;
+    // Handle paginated response (DRF returns { count, next, previous, results })
+    if (response.data && Array.isArray(response.data.results)) {
+      return response.data.results;
+    }
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   // Get team members (for managers)
   getTeam: async (): Promise<Employee[]> => {
     const response = await apiClient.get('/api/employees/team/');
-    return response.data;
+    // Handle paginated response
+    if (response.data && Array.isArray(response.data.results)) {
+      return response.data.results;
+    }
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   // Get current user's profile

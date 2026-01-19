@@ -113,7 +113,12 @@ export const shiftApi = {
   // Get all shifts
   getShifts: async (): Promise<Shift[]> => {
     const response = await apiClient.get('/api/shifts/');
-    return response.data;
+    // Handle paginated response (DRF returns { count, next, previous, results })
+    if (response.data && Array.isArray(response.data.results)) {
+      return response.data.results;
+    }
+    // Handle non-paginated response
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   // Get shift assignments

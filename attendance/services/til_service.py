@@ -22,6 +22,38 @@ from attendance.models import (
 class TILService:
     """Service class for TIL (Time in Lieu) business logic"""
 
+    # TIL Multiplier thresholds
+    TIL_TIER1_HOURS = Decimal('3')  # First 3 hours
+    TIL_TIER1_MULTIPLIER = Decimal('1.5')  # 1.5x for first 3 hours
+    TIL_TIER2_MULTIPLIER = Decimal('2.0')  # 2x for hours after 3
+
+    @staticmethod
+    def calculate_til_hours(raw_hours):
+        """
+        Calculate TIL hours based on overtime multipliers:
+        - First 3 hours: 1.5x
+        - After 3 hours: 2x
+
+        Example:
+        - 2 hours OT → 2 * 1.5 = 3 hours TIL
+        - 4 hours OT → (3 * 1.5) + (1 * 2) = 6.5 hours TIL
+        - 5 hours OT → (3 * 1.5) + (2 * 2) = 8.5 hours TIL
+        """
+        raw_hours = Decimal(str(raw_hours))
+
+        if raw_hours <= Decimal('0'):
+            return Decimal('0')
+
+        if raw_hours <= TILService.TIL_TIER1_HOURS:
+            # All hours at 1.5x
+            return raw_hours * TILService.TIL_TIER1_MULTIPLIER
+        else:
+            # First 3 hours at 1.5x, remainder at 2x
+            tier1_til = TILService.TIL_TIER1_HOURS * TILService.TIL_TIER1_MULTIPLIER
+            tier2_hours = raw_hours - TILService.TIL_TIER1_HOURS
+            tier2_til = tier2_hours * TILService.TIL_TIER2_MULTIPLIER
+            return tier1_til + tier2_til
+
     @staticmethod
     def get_employee_shift_for_date(employee_profile, date):
         """
@@ -102,10 +134,11 @@ class TILService:
                     result['pre_approved'] = True
                     approved_minutes = assignment.approved_early_minutes
 
-                    # Calculate TIL earned (up to approved amount)
+                    # Calculate TIL earned (up to approved amount) with multipliers
                     earned_minutes = min(early_minutes, approved_minutes)
-                    result['til_earned'] = Decimal(earned_minutes) / Decimal(60)
-                    result['message'] = f'Pre-approved early start: {earned_minutes} minutes = {result["til_earned"]}h TIL'
+                    raw_hours = Decimal(earned_minutes) / Decimal(60)
+                    result['til_earned'] = TILService.calculate_til_hours(raw_hours)
+                    result['message'] = f'Pre-approved early start: {earned_minutes} min ({raw_hours}h) = {result["til_earned"]}h TIL (with multiplier)'
 
                     # Auto-create approved TIL record
                     TILService.create_til_record(
@@ -185,12 +218,12 @@ class TILService:
                     result['pre_approved'] = True
                     approved_hours = assignment.approved_overtime_hours
 
-                    # Calculate TIL earned (up to approved amount)
+                    # Calculate TIL earned (up to approved amount) with multipliers
                     actual_ot_hours = Decimal(overtime_minutes) / Decimal(60)
-                    earned_hours = min(actual_ot_hours, approved_hours)
-                    result['til_earned'] = earned_hours
+                    earned_hours = min(actual_ot_hours, Decimal(str(approved_hours)))
+                    result['til_earned'] = TILService.calculate_til_hours(earned_hours)
                     result['status'] = 'APPROVED'
-                    result['message'] = f'Pre-approved overtime: {overtime_minutes} minutes = {earned_hours}h TIL'
+                    result['message'] = f'Pre-approved overtime: {overtime_minutes} min ({earned_hours}h) = {result["til_earned"]}h TIL (with multiplier)'
 
                     # Auto-create approved TIL record
                     TILService.create_til_record(
@@ -206,9 +239,9 @@ class TILService:
                 else:
                     # No pre-approval - create pending TIL record for manager review
                     actual_ot_hours = Decimal(overtime_minutes) / Decimal(60)
-                    result['til_earned'] = actual_ot_hours
+                    result['til_earned'] = TILService.calculate_til_hours(actual_ot_hours)
                     result['status'] = 'PENDING'
-                    result['message'] = f'Unapproved overtime: {overtime_minutes} minutes = {actual_ot_hours}h TIL (pending approval)'
+                    result['message'] = f'Unapproved overtime: {overtime_minutes} min ({actual_ot_hours}h) = {result["til_earned"]}h TIL (pending approval, with multiplier)'
 
                     # Create pending TIL record
                     TILService.create_til_record(
@@ -216,7 +249,7 @@ class TILService:
                         til_type='EARNED_OT',
                         hours=result['til_earned'],
                         date=date,
-                        reason=f'Overtime worked: {overtime_minutes} min past scheduled end (not pre-approved)',
+                        reason=f'Overtime worked: {overtime_minutes} min ({actual_ot_hours}h raw) = {result["til_earned"]}h TIL (not pre-approved)',
                         auto_approve=False,
                         daily_summary=daily_summary
                     )

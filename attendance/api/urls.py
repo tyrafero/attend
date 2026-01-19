@@ -8,6 +8,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from . import views
 from . import attendance_views
+from . import report_views
 
 app_name = 'api'
 
@@ -45,6 +46,17 @@ urlpatterns = [
 
     # Early Birds (for managers)
     path('attendance/early-birds/', attendance_views.early_birds_view, name='early-birds'),
+
+    # Reports endpoints
+    path('reports/attendance/', report_views.attendance_report_view, name='attendance-report'),
+    path('reports/attendance/export/', report_views.attendance_export_view, name='attendance-export'),
+    path('reports/til/', report_views.til_report_view, name='til-report'),
+    path('reports/til/export/', report_views.til_export_view, name='til-export'),
+    path('reports/leaves/', report_views.leave_report_view, name='leave-report'),
+    path('reports/leaves/export/', report_views.leave_export_view, name='leave-export'),
+    path('reports/team/', report_views.team_report_view, name='team-report'),
+    path('reports/analytics/attendance-trends/', report_views.attendance_trends_view, name='attendance-trends'),
+    path('reports/analytics/department-comparison/', report_views.department_comparison_view, name='department-comparison'),
 
     # Include router URLs
     path('', include(router.urls)),

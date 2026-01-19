@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ShiftManagementPage } from './pages/ShiftManagementPage';
 import { TILPage } from './pages/TILPage';
 import { LeavePage } from './pages/LeavePage';
+import { ReportsPage } from './pages/ReportsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Create a client
@@ -59,6 +60,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <LeavePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <ReportsPage />
               </ProtectedRoute>
             }
           />

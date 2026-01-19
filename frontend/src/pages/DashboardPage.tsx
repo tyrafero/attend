@@ -84,13 +84,22 @@ export function DashboardPage() {
                 TIL
               </a>
               {(user?.employee_profile?.role === 'MANAGER' || user?.employee_profile?.role === 'HR_ADMIN') && (
-                <a
-                  href="/shifts"
-                  className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
-                  style={{ color: '#667eea' }}
-                >
-                  Shifts
-                </a>
+                <>
+                  <a
+                    href="/shifts"
+                    className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    style={{ color: '#667eea' }}
+                  >
+                    Shifts
+                  </a>
+                  <a
+                    href="/reports"
+                    className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    style={{ color: '#667eea' }}
+                  >
+                    Reports
+                  </a>
+                </>
               )}
               <button
                 onClick={() => setShowSettings(true)}
