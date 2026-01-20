@@ -2,9 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: '/static/frontend/',
+  // Use /static/frontend/ only in production build, / for development
+  base: mode === 'production' ? '/static/frontend/' : '/',
   server: {
     host: true,
     port: 3002,
@@ -17,4 +18,4 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
   },
-})
+}))

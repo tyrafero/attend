@@ -17,7 +17,7 @@ export function ClockInOut() {
   }, []);
 
   // Get current status with polling
-  const { data: currentStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
+  const { data: currentStatus, isLoading: statusLoading } = useQuery({
     queryKey: ['attendance', 'current'],
     queryFn: attendanceApi.getCurrentStatus,
     refetchInterval: 30000, // Poll every 30 seconds
@@ -31,11 +31,19 @@ export function ClockInOut() {
       setMessage(data.message);
       setMessageType('success');
 
-      // Force refetch status immediately
-      await refetchStatus();
+      // Optimistically update the status cache with response data
+      queryClient.setQueryData(['attendance', 'current'], (old: any) => ({
+        ...old,
+        current_status: data.action, // 'IN' or 'OUT' from response
+        first_clock_in: data.action === 'IN' && !old?.first_clock_in
+          ? data.time
+          : old?.first_clock_in,
+        last_clock_out: data.action === 'OUT' ? data.time : old?.last_clock_out,
+        hours_worked: data.hours_worked || old?.hours_worked,
+      }));
 
-      // Also invalidate all attendance queries
-      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      // Also invalidate and refetch to ensure consistency
+      await queryClient.invalidateQueries({ queryKey: ['attendance'] });
 
       setTimeout(() => setMessage(''), 3000);
     },
