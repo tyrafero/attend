@@ -2,7 +2,7 @@
 API Views for authentication and user management
 """
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -43,6 +43,7 @@ def ratelimit_handler(request, exception):
 
 @csrf_exempt
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @ratelimit(key='ip', rate='10/h', method='POST', block=True)
 def login_view(request):
@@ -72,6 +73,7 @@ def login_view(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @ratelimit(key='ip', rate='5/h', method='POST', block=True)
 def pin_login_view(request):
