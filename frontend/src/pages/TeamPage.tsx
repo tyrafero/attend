@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useQuery } from '@tanstack/react-query';
-import { adminApi, type EmployeeTimesheet, type DailyRecord } from '../api/admin';
+import { adminApi, type EmployeeTimesheet } from '../api/admin';
 
 export function TeamPage() {
   const { user, logout } = useAuthStore();

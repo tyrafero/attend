@@ -8,11 +8,14 @@ ENV PYTHONUNBUFFERED=1
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Node.js for React build
 RUN apt-get update && apt-get install -y \
     gcc \
     default-libmysqlclient-dev \
     pkg-config \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -23,10 +26,16 @@ RUN pip install -r requirements.txt
 # Copy project
 COPY . /app/
 
-# Create static directory
-RUN mkdir -p /app/static /app/staticfiles
+# Build React frontend
+WORKDIR /app/frontend
+RUN npm ci && npm run build
 
-# Collect static files during build (faster startup)
+# Copy React build to staticfiles
+WORKDIR /app
+RUN mkdir -p /app/staticfiles/frontend && cp -r /app/frontend/dist/* /app/staticfiles/frontend/
+
+# Create static directory and collect Django static files
+RUN mkdir -p /app/static
 RUN python manage.py collectstatic --noinput --clear || echo "Static collection skipped"
 
 # Make scripts executable

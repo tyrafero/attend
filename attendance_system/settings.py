@@ -194,14 +194,18 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@attendance.co
 
 # Static files
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-# Only include STATICFILES_DIRS if the static directory has source files (not in production)
-if os.path.exists(BASE_DIR / 'static' / 'src') or config('DEBUG', default=True, cast=bool):
-    STATICFILES_DIRS = [BASE_DIR / 'static']
-else:
-    STATICFILES_DIRS = []
+
+# Static files directories
+STATICFILES_DIRS = []
+if os.path.exists(BASE_DIR / 'static'):
+    STATICFILES_DIRS.append(BASE_DIR / 'static')
+# Include React frontend build
+if os.path.exists(BASE_DIR / 'frontend' / 'dist'):
+    STATICFILES_DIRS.append(('frontend', BASE_DIR / 'frontend' / 'dist'))
 
 # WhiteNoise configuration for serving static files in production
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+WHITENOISE_INDEX_FILE = True
 
 # CORS Configuration (for React frontend)
 CORS_ALLOWED_ORIGINS = [
