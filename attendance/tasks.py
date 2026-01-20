@@ -424,6 +424,306 @@ This leave will count toward your worked hours.
 
 
 @shared_task
+def send_leave_approval_notification(leave_record_id):
+    """Send email notification when leave is approved"""
+    from django.core.mail import EmailMultiAlternatives
+    from attendance.models import LeaveRecord, EmployeeProfile
+
+    try:
+        leave_record = LeaveRecord.objects.get(id=leave_record_id)
+        employee = leave_record.employee_profile
+
+        if not employee or not employee.user or not employee.user.email:
+            return f"No email found for leave record {leave_record_id}"
+
+        subject = f'✅ Leave Approved - {leave_record.get_leave_type_display()}'
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Leave Approved</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+                <p style="font-size: 16px;">Hello <strong>{employee.employee_name}</strong>,</p>
+                <p style="font-size: 16px;">Great news! Your leave request has been <strong style="color: #10B981;">approved</strong>.</p>
+
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #10B981;">
+                    <h3 style="margin-top: 0; color: #374151;">Leave Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Type:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.get_leave_type_display()}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">From:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.start_date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">To:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.end_date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Duration:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.total_days} day(s) ({leave_record.total_hours}h)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Approved By:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.approved_by.employee_name if leave_record.approved_by else 'Manager'}</td>
+                        </tr>
+                    </table>
+                    {f'<p style="margin-top: 15px; padding: 10px; background: #f0fdf4; border-radius: 4px;"><strong>Manager Comment:</strong> {leave_record.manager_comments}</p>' if leave_record.manager_comments else ''}
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">Enjoy your time off!</p>
+            </div>
+            <div style="background: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; margin: 0; font-size: 12px;">Digital Cinema Attendance System</p>
+            </div>
+        </div>
+        """
+
+        text_content = f"""
+Leave Approved
+
+Hello {employee.employee_name},
+
+Your leave request has been approved.
+
+Leave Details:
+- Type: {leave_record.get_leave_type_display()}
+- From: {leave_record.start_date}
+- To: {leave_record.end_date}
+- Duration: {leave_record.total_days} day(s)
+- Approved By: {leave_record.approved_by.employee_name if leave_record.approved_by else 'Manager'}
+
+{f'Manager Comment: {leave_record.manager_comments}' if leave_record.manager_comments else ''}
+
+Enjoy your time off!
+
+Digital Cinema Attendance System
+        """
+
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[employee.user.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        EmailLog.objects.create(
+            email_type='LEAVE_APPROVAL',
+            recipient=employee.user.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'Leave approval notification sent for {leave_record.leave_type}'
+        )
+
+        return f"Leave approval notification sent to {employee.user.email}"
+
+    except LeaveRecord.DoesNotExist:
+        return f"LeaveRecord {leave_record_id} not found"
+    except Exception as e:
+        logger.error(f"Failed to send leave approval notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
+def send_leave_rejection_notification(leave_record_id):
+    """Send email notification when leave is rejected"""
+    from django.core.mail import EmailMultiAlternatives
+    from attendance.models import LeaveRecord, EmployeeProfile
+
+    try:
+        leave_record = LeaveRecord.objects.get(id=leave_record_id)
+        employee = leave_record.employee_profile
+
+        if not employee or not employee.user or not employee.user.email:
+            return f"No email found for leave record {leave_record_id}"
+
+        subject = f'❌ Leave Request Declined - {leave_record.get_leave_type_display()}'
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Leave Request Declined</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+                <p style="font-size: 16px;">Hello <strong>{employee.employee_name}</strong>,</p>
+                <p style="font-size: 16px;">Unfortunately, your leave request has been <strong style="color: #EF4444;">declined</strong>.</p>
+
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #EF4444;">
+                    <h3 style="margin-top: 0; color: #374151;">Leave Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Type:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.get_leave_type_display()}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Requested Dates:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.start_date.strftime('%d %b')} - {leave_record.end_date.strftime('%d %b %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Reviewed By:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.approved_by.employee_name if leave_record.approved_by else 'Manager'}</td>
+                        </tr>
+                    </table>
+                    {f'<p style="margin-top: 15px; padding: 10px; background: #fef2f2; border-radius: 4px; color: #991b1b;"><strong>Reason:</strong> {leave_record.rejection_reason}</p>' if leave_record.rejection_reason else ''}
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">If you have any questions, please speak with your manager.</p>
+            </div>
+            <div style="background: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; margin: 0; font-size: 12px;">Digital Cinema Attendance System</p>
+            </div>
+        </div>
+        """
+
+        text_content = f"""
+Leave Request Declined
+
+Hello {employee.employee_name},
+
+Unfortunately, your leave request has been declined.
+
+Leave Details:
+- Type: {leave_record.get_leave_type_display()}
+- Requested Dates: {leave_record.start_date} - {leave_record.end_date}
+- Reviewed By: {leave_record.approved_by.employee_name if leave_record.approved_by else 'Manager'}
+
+{f'Reason: {leave_record.rejection_reason}' if leave_record.rejection_reason else ''}
+
+If you have any questions, please speak with your manager.
+
+Digital Cinema Attendance System
+        """
+
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[employee.user.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        EmailLog.objects.create(
+            email_type='LEAVE_REJECTION',
+            recipient=employee.user.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'Leave rejection notification sent for {leave_record.leave_type}'
+        )
+
+        return f"Leave rejection notification sent to {employee.user.email}"
+
+    except LeaveRecord.DoesNotExist:
+        return f"LeaveRecord {leave_record_id} not found"
+    except Exception as e:
+        logger.error(f"Failed to send leave rejection notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
+def send_til_approval_notification(til_record_id):
+    """Send email notification when TIL is approved"""
+    from django.core.mail import EmailMultiAlternatives
+    from attendance.models import TILRecord
+
+    try:
+        til_record = TILRecord.objects.select_related('employee', 'approved_by').get(id=til_record_id)
+        employee = til_record.employee
+
+        if not employee or not employee.user or not employee.user.email:
+            return f"No email found for TIL record {til_record_id}"
+
+        subject = f'✅ TIL {til_record.get_til_type_display()} Approved - {til_record.hours}h'
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">TIL Approved</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+                <p style="font-size: 16px;">Hello <strong>{employee.employee_name}</strong>,</p>
+                <p style="font-size: 16px;">Your Time in Lieu request has been <strong style="color: #8B5CF6;">approved</strong>.</p>
+
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #8B5CF6;">
+                    <h3 style="margin-top: 0; color: #374151;">TIL Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Type:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{til_record.get_til_type_display()}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Hours:</td>
+                            <td style="padding: 8px 0; font-weight: bold; color: #10B981;">+{til_record.hours}h</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Date:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{til_record.date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Approved By:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{til_record.approved_by.employee_name if til_record.approved_by else 'Manager'}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">Your TIL balance has been updated.</p>
+            </div>
+            <div style="background: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; margin: 0; font-size: 12px;">Digital Cinema Attendance System</p>
+            </div>
+        </div>
+        """
+
+        text_content = f"""
+TIL Approved
+
+Hello {employee.employee_name},
+
+Your Time in Lieu request has been approved.
+
+TIL Details:
+- Type: {til_record.get_til_type_display()}
+- Hours: +{til_record.hours}h
+- Date: {til_record.date}
+- Approved By: {til_record.approved_by.employee_name if til_record.approved_by else 'Manager'}
+
+Your TIL balance has been updated.
+
+Digital Cinema Attendance System
+        """
+
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[employee.user.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        EmailLog.objects.create(
+            email_type='TIL_APPROVAL',
+            recipient=employee.user.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'TIL approval notification sent for {til_record.hours}h'
+        )
+
+        return f"TIL approval notification sent to {employee.user.email}"
+
+    except TILRecord.DoesNotExist:
+        return f"TILRecord {til_record_id} not found"
+    except Exception as e:
+        logger.error(f"Failed to send TIL approval notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
 def send_weekly_reports():
     """
     Send beautiful HTML weekly reports every Friday after 5 PM

@@ -9,6 +9,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
+from django_ratelimit.decorators import ratelimit
+from django.http import JsonResponse
 
 from .serializers import (
     LoginSerializer,
@@ -30,8 +32,17 @@ def get_tokens_for_user(user):
     }
 
 
+def ratelimit_handler(request, exception):
+    """Handler for rate-limited requests"""
+    return JsonResponse({
+        'error': 'Too many attempts. Please try again later.',
+        'detail': 'Rate limit exceeded'
+    }, status=429)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='10/h', method='POST', block=True)
 def login_view(request):
     """
     Username/password login endpoint
@@ -59,10 +70,12 @@ def login_view(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='5/h', method='POST', block=True)
 def pin_login_view(request):
     """
     PIN-based login endpoint (for kiosk mode)
     Returns JWT tokens and user data
+    Rate limited: 5 attempts per hour per IP
     """
     serializer = PINLoginSerializer(data=request.data)
 

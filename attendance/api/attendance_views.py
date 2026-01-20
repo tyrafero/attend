@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from datetime import datetime, timedelta
 from decimal import Decimal
+from django_ratelimit.decorators import ratelimit
 
 from attendance.models import (
     DailySummary, AttendanceTap, Department, Shift,
@@ -28,10 +29,12 @@ from .permissions import IsEmployee, IsManager, IsHRAdmin
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allows both JWT and PIN authentication
+@ratelimit(key='ip', rate='30/h', method='POST', block=True)
 def clock_action_view(request):
     """
     Clock in/out endpoint
     Supports dual authentication: JWT (for web) or PIN/NFC (for kiosk)
+    Rate limited: 30 clock actions per hour per IP
     """
     serializer = ClockActionSerializer(data=request.data, context={'request': request})
 
@@ -575,6 +578,10 @@ class TILRecordViewSet(viewsets.ModelViewSet):
         til_balance, _ = TILBalance.objects.get_or_create(employee=til_record.employee)
         til_balance.recalculate()
 
+        # Send approval notification email
+        from attendance.tasks import send_til_approval_notification
+        send_til_approval_notification.delay(til_record.id)
+
         return Response({'message': 'TIL approved successfully'})
 
     @action(detail=True, methods=['post'], permission_classes=[IsManager])
@@ -734,6 +741,10 @@ class LeaveRecordViewSet(viewsets.ModelViewSet):
             )
             til_balance.recalculate()
 
+        # Send approval notification email
+        from attendance.tasks import send_leave_approval_notification
+        send_leave_approval_notification.delay(leave_record.id)
+
         return Response({'message': 'Leave approved successfully'})
 
     @action(detail=True, methods=['post'], permission_classes=[IsManager])
@@ -754,6 +765,10 @@ class LeaveRecordViewSet(viewsets.ModelViewSet):
         leave_record.approved_at = timezone.now()
         leave_record.rejection_reason = rejection_reason
         leave_record.save()
+
+        # Send rejection notification email
+        from attendance.tasks import send_leave_rejection_notification
+        send_leave_rejection_notification.delay(leave_record.id)
 
         return Response({'message': 'Leave rejected'})
 
