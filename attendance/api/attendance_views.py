@@ -2,10 +2,11 @@
 Attendance API views - clock in/out, daily summaries, current status
 """
 from rest_framework import status, viewsets
-from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.decorators import api_view, permission_classes, action, authentication_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django_ratelimit.decorators import ratelimit
@@ -27,7 +28,9 @@ from .serializers import (
 from .permissions import IsEmployee, IsManager, IsHRAdmin
 
 
+@csrf_exempt
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])  # Allows both JWT and PIN authentication
 @ratelimit(key='ip', rate='30/h', method='POST', block=True)
 def clock_action_view(request):
