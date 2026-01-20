@@ -842,3 +842,236 @@ class PINHistory(models.Model):
 
     def __str__(self):
         return f"{self.employee.employee_name} - {self.get_change_reason_display()} at {self.changed_at}"
+
+
+from django.contrib import admin
+from django.utils.html import format_html
+from unfold.admin import ModelAdmin
+from unfold.decorators import display
+from unfold.contrib.filters.admin import RangeDateFilter, RangeDateTimeFilter
+
+from .models import (
+    # V1
+    EmployeeRegistry, AttendanceTap, DailySummary,
+    TimesheetEdit, EmailLog, SystemSettings,
+    AttendanceReport, LeaveRecord,
+
+    # V2
+    Department, Shift, EmployeeProfile,
+    ShiftAssignment, TILRecord, TILBalance,
+    PINHistory
+)
+
+from . import views
+
+
+# ============================================================================
+# V1 ADMINS (UNCHANGED BEHAVIOUR)
+# ============================================================================
+
+@admin.register(EmployeeRegistry)
+class EmployeeRegistryAdmin(ModelAdmin):
+    list_display = ['employee_id', 'employee_name', 'email', 'show_nfc_status', 'show_active_status', 'created_at']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['employee_id', 'employee_name', 'email', 'nfc_id']
+    readonly_fields = ['created_at']
+    list_filter_submit = True
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('employee_id', 'employee_name', 'email', 'is_active')
+        }),
+        ('Authentication', {
+            'fields': ('pin_code', 'nfc_id'),
+        }),
+        ('Metadata', {
+            'fields': ('created_at',),
+        }),
+    )
+
+    @display(description="NFC", label=True)
+    def show_nfc_status(self, obj):
+        return "✓" if obj.nfc_id else "—"
+
+    @display(description="Status", label=True)
+    def show_active_status(self, obj):
+        return "Active" if obj.is_active else "Inactive"
+
+
+@admin.register(AttendanceTap)
+class AttendanceTapAdmin(ModelAdmin):
+    list_display = ['employee_name', 'employee_id', 'action', 'timestamp']
+    list_filter = [('timestamp', RangeDateTimeFilter), 'action']
+    search_fields = ['employee_id', 'employee_name']
+    readonly_fields = ['timestamp', 'created_at']
+    list_filter_submit = True
+
+
+@admin.register(DailySummary)
+class DailySummaryAdmin(ModelAdmin):
+    list_display = [
+        'employee_name', 'date',
+        'first_clock_in', 'last_clock_out',
+        'show_final_hours', 'current_status', 'tap_count'
+    ]
+
+    list_filter = [('date', RangeDateFilter), 'current_status']
+    search_fields = [
+        'employee_id', 'employee_name',
+        'selected_employee__employee_id',
+        'selected_employee__employee_name'
+    ]
+
+    autocomplete_fields = ['selected_employee']
+    readonly_fields = [
+        'employee_id', 'employee_name',
+        'raw_hours', 'break_deduction',
+        'final_hours', 'tap_count'
+    ]
+
+    list_filter_submit = True
+
+    fieldsets = (
+        ('Employee', {
+            'fields': ('selected_employee', 'employee_id', 'employee_name', 'date')
+        }),
+        ('Times', {
+            'fields': ('first_clock_in', 'last_clock_out', 'current_status')
+        }),
+        ('Calculated', {
+            'fields': ('raw_hours', 'break_deduction', 'final_hours', 'tap_count')
+        }),
+    )
+
+    @display(description="Hours")
+    def show_final_hours(self, obj):
+        return f"{obj.final_hours}h" if obj.final_hours else "0h"
+
+
+@admin.register(TimesheetEdit)
+class TimesheetEditAdmin(ModelAdmin):
+    list_display = ['employee_name', 'date', 'field_changed', 'edited_by', 'edited_at']
+    list_filter = [('edited_at', RangeDateTimeFilter), 'field_changed']
+    search_fields = ['employee_id', 'employee_name']
+    readonly_fields = ['edited_at']
+    list_filter_submit = True
+
+
+@admin.register(EmailLog)
+class EmailLogAdmin(ModelAdmin):
+    list_display = ['email_type', 'recipient', 'employee_id', 'status', 'timestamp']
+    list_filter = ['status', 'email_type', ('timestamp', RangeDateTimeFilter)]
+    search_fields = ['recipient', 'employee_id']
+    readonly_fields = ['timestamp']
+    list_filter_submit = True
+
+
+@admin.register(LeaveRecord)
+class LeaveRecordAdmin(ModelAdmin):
+    list_display = [
+        'employee_name', 'leave_type',
+        'start_date', 'end_date',
+        'total_days', 'total_hours', 'status'
+    ]
+
+    list_filter = [
+        'leave_type', 'status',
+        ('start_date', RangeDateFilter),
+        ('end_date', RangeDateFilter)
+    ]
+
+    search_fields = [
+        'employee_id', 'employee_name',
+        'selected_employee__employee_name',
+        'employee_profile__employee_name'
+    ]
+
+    autocomplete_fields = ['selected_employee', 'employee_profile']
+    readonly_fields = [
+        'employee_id', 'employee_name',
+        'total_days', 'total_hours',
+        'created_at', 'created_by'
+    ]
+
+    list_filter_submit = True
+
+
+@admin.register(SystemSettings)
+class SystemSettingsAdmin(ModelAdmin):
+    def has_add_permission(self, request):
+        return not SystemSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AttendanceReport)
+class AttendanceReportAdmin(ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        return views.reports_view(request)
+
+
+# ============================================================================
+# V2 ADMINS (NEW — SAFE, ISOLATED)
+# ============================================================================
+
+@admin.register(Department)
+class DepartmentAdmin(ModelAdmin):
+    list_display = ['code', 'name', 'manager', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name', 'code']
+    autocomplete_fields = ['manager']
+
+
+@admin.register(Shift)
+class ShiftAdmin(ModelAdmin):
+    list_display = ['name', 'start_time', 'end_time', 'scheduled_hours', 'department', 'is_active']
+    list_filter = ['department', 'is_active']
+    search_fields = ['name', 'code']
+
+
+@admin.register(EmployeeProfile)
+class EmployeeProfileAdmin(ModelAdmin):
+    list_display = ['employee_id', 'employee_name', 'role', 'department', 'is_active']
+    list_filter = ['role', 'department', 'is_active']
+    search_fields = ['employee_id', 'employee_name', 'email']
+    autocomplete_fields = ['department', 'manager', 'default_shift']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(ShiftAssignment)
+class ShiftAssignmentAdmin(ModelAdmin):
+    list_display = ['employee', 'shift', 'date', 'approved_by']
+    list_filter = ['shift', 'date']
+    autocomplete_fields = ['employee', 'shift', 'approved_by']
+
+
+@admin.register(TILRecord)
+class TILRecordAdmin(ModelAdmin):
+    list_display = ['employee', 'til_type', 'hours', 'status', 'date']
+    list_filter = ['til_type', 'status']
+    autocomplete_fields = ['employee', 'approved_by']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(TILBalance)
+class TILBalanceAdmin(ModelAdmin):
+    list_display = ['employee', 'current_balance', 'last_calculated_at']
+    readonly_fields = ['total_earned', 'total_used', 'current_balance', 'last_calculated_at']
+
+
+@admin.register(PINHistory)
+class PINHistoryAdmin(ModelAdmin):
+    list_display = ['employee', 'change_reason', 'changed_by', 'changed_at']
+    list_filter = ['change_reason']
+    search_fields = ['employee__employee_name']
+    readonly_fields = ['changed_at']

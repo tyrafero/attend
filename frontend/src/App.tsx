@@ -7,6 +7,8 @@ import { ShiftManagementPage } from './pages/ShiftManagementPage';
 import { TILPage } from './pages/TILPage';
 import { LeavePage } from './pages/LeavePage';
 import { ReportsPage } from './pages/ReportsPage';
+import { AdminPage } from './pages/AdminPage';
+import { TeamPage } from './pages/TeamPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Create a client
@@ -68,6 +70,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <ReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team"
+            element={
+              <ProtectedRoute>
+                <TeamPage />
               </ProtectedRoute>
             }
           />

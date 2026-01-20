@@ -14,16 +14,111 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     """Serializer for EmployeeProfile"""
     department_name = serializers.CharField(source='department.name', read_only=True)
     manager_name = serializers.CharField(source='manager.employee_name', read_only=True, allow_null=True)
+    default_shift_name = serializers.CharField(source='default_shift.name', read_only=True, allow_null=True)
+    username = serializers.CharField(source='user.username', read_only=True)
 
     class Meta:
         model = EmployeeProfile
         fields = [
             'id', 'employee_id', 'employee_name', 'email',
             'department', 'department_name', 'role',
-            'manager', 'manager_name', 'is_active',
+            'manager', 'manager_name', 'default_shift', 'default_shift_name',
+            'is_active', 'username',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class EmployeeCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating new employees (HR Admin only)"""
+    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=6)
+    pin = serializers.CharField(write_only=True, min_length=4, max_length=6)
+
+    class Meta:
+        model = EmployeeProfile
+        fields = [
+            'employee_id', 'employee_name', 'email',
+            'department', 'role', 'manager', 'default_shift',
+            'username', 'password', 'pin'
+        ]
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError('Username already exists')
+        return value
+
+    def validate_employee_id(self, value):
+        if EmployeeProfile.objects.filter(employee_id=value).exists():
+            raise serializers.ValidationError('Employee ID already exists')
+        return value
+
+    def validate_pin(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError('PIN must be numeric')
+        return value
+
+    def create(self, validated_data):
+        username = validated_data.pop('username')
+        password = validated_data.pop('password')
+        pin = validated_data.pop('pin')
+
+        # Create Django User
+        user = User.objects.create_user(
+            username=username,
+            email=validated_data.get('email', ''),
+            password=password,
+            first_name=validated_data.get('employee_name', '').split()[0] if validated_data.get('employee_name') else '',
+            last_name=' '.join(validated_data.get('employee_name', '').split()[1:]) if validated_data.get('employee_name') else ''
+        )
+
+        # Create EmployeeProfile
+        employee = EmployeeProfile.objects.create(
+            user=user,
+            pin_hash=make_password(pin),
+            **validated_data
+        )
+
+        return employee
+
+
+class EmployeeUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating employees (HR Admin only)"""
+    new_password = serializers.CharField(write_only=True, min_length=6, required=False, allow_blank=True)
+    new_pin = serializers.CharField(write_only=True, min_length=4, max_length=6, required=False, allow_blank=True)
+
+    class Meta:
+        model = EmployeeProfile
+        fields = [
+            'employee_name', 'email', 'department', 'role',
+            'manager', 'default_shift', 'is_active',
+            'new_password', 'new_pin'
+        ]
+
+    def validate_new_pin(self, value):
+        if value and not value.isdigit():
+            raise serializers.ValidationError('PIN must be numeric')
+        return value
+
+    def update(self, instance, validated_data):
+        new_password = validated_data.pop('new_password', None)
+        new_pin = validated_data.pop('new_pin', None)
+
+        # Update password if provided
+        if new_password:
+            instance.user.set_password(new_password)
+            instance.user.save()
+
+        # Update PIN if provided
+        if new_pin:
+            instance.pin_hash = make_password(new_pin)
+
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
 
 
 class UserSerializer(serializers.ModelSerializer):

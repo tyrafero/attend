@@ -64,4 +64,18 @@ export const attendanceApi = {
     const response = await apiClient.get('/api/attendance/me/summary/', { params });
     return response.data;
   },
+
+  // Get team member's attendance (for managers)
+  getTeamAttendance: async (employeeId: string, startDate?: string, endDate?: string): Promise<DailySummary[]> => {
+    const params: any = { employee_id: employeeId };
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+
+    const response = await apiClient.get('/api/daily-summaries/', { params });
+    // Handle paginated response
+    if (response.data && Array.isArray(response.data.results)) {
+      return response.data.results;
+    }
+    return Array.isArray(response.data) ? response.data : [];
+  },
 };

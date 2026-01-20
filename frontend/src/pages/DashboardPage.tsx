@@ -86,6 +86,13 @@ export function DashboardPage() {
               {(user?.employee_profile?.role === 'MANAGER' || user?.employee_profile?.role === 'HR_ADMIN') && (
                 <>
                   <a
+                    href="/team"
+                    className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    style={{ color: '#667eea' }}
+                  >
+                    Team
+                  </a>
+                  <a
                     href="/shifts"
                     className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                     style={{ color: '#667eea' }}
@@ -100,6 +107,15 @@ export function DashboardPage() {
                     Reports
                   </a>
                 </>
+              )}
+              {user?.employee_profile?.role === 'HR_ADMIN' && (
+                <a
+                  href="/admin"
+                  className="text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors font-medium"
+                  style={{ color: '#764ba2' }}
+                >
+                  Admin
+                </a>
               )}
               <button
                 onClick={() => setShowSettings(true)}

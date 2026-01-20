@@ -76,3 +76,4 @@ Thumbs.db
 .claude/
 DEPLOYMENT.md
 test*
+*.sql

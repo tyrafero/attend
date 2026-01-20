@@ -19,6 +19,7 @@ from .serializers import (
     ClockActionSerializer, DailySummarySerializer,
     AttendanceTapSerializer, CurrentStatusSerializer,
     DepartmentSerializer, ShiftSerializer, EmployeeProfileSerializer,
+    EmployeeCreateSerializer, EmployeeUpdateSerializer,
     ShiftAssignmentSerializer, TILRecordSerializer, TILBalanceSerializer,
     LeaveRecordSerializer
 )
@@ -243,29 +244,156 @@ class ShiftViewSet(viewsets.ModelViewSet):
         return [IsEmployee()]
 
 
-class EmployeeProfileViewSet(viewsets.ReadOnlyModelViewSet):
-    """Employee profile list/detail (read-only via API)"""
-    queryset = EmployeeProfile.objects.filter(is_active=True).select_related(
+class EmployeeProfileViewSet(viewsets.ModelViewSet):
+    """Employee profile CRUD - HR can create/update/delete, others can view"""
+    queryset = EmployeeProfile.objects.select_related(
         'user', 'department', 'manager', 'default_shift'
     ).order_by('employee_name')
-    serializer_class = EmployeeProfileSerializer
     permission_classes = [IsEmployee]
+
+    def get_serializer_class(self):
+        """Use different serializers for create/update"""
+        if self.action == 'create':
+            return EmployeeCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return EmployeeUpdateSerializer
+        return EmployeeProfileSerializer
+
+    def get_permissions(self):
+        """HR only for create/update/delete, employees can view"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsHRAdmin()]
+        return [IsEmployee()]
+
+    def get_queryset(self):
+        """Filter based on user role and query params"""
+        queryset = super().get_queryset()
+
+        # Show inactive employees only for HR in list view
+        if self.action == 'list':
+            show_inactive = self.request.query_params.get('show_inactive', 'false').lower() == 'true'
+            if not show_inactive:
+                queryset = queryset.filter(is_active=True)
+
+        # Filter by department
+        department = self.request.query_params.get('department')
+        if department:
+            queryset = queryset.filter(department_id=department)
+
+        # Filter by role
+        role = self.request.query_params.get('role')
+        if role:
+            queryset = queryset.filter(role=role)
+
+        return queryset
 
     @action(detail=False, methods=['get'])
     def me(self, request):
         """Get current user's profile"""
-        serializer = self.get_serializer(request.user.employee_profile)
+        serializer = EmployeeProfileSerializer(request.user.employee_profile)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], permission_classes=[IsManager])
     def team(self, request):
-        """Get team members (for managers)"""
+        """Get team members (for managers) - includes direct reports AND department employees"""
         employee_profile = request.user.employee_profile
+        from django.db.models import Q
+
+        # Build query for team members
+        query = Q(manager=employee_profile)  # Direct reports
+
+        # Also include employees in departments where this user is the manager
+        managed_depts = Department.objects.filter(manager=employee_profile)
+        if managed_depts.exists():
+            query |= Q(department__in=managed_depts)
+
         team_members = EmployeeProfile.objects.filter(
-            manager=employee_profile,
+            query,
             is_active=True
-        )
-        serializer = self.get_serializer(team_members, many=True)
+        ).exclude(
+            id=employee_profile.id  # Exclude self
+        ).select_related('user', 'department', 'manager', 'default_shift').distinct()
+
+        serializer = EmployeeProfileSerializer(team_members, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsManager])
+    def team_timesheet(self, request):
+        """Get timesheet data for all team members in a date range"""
+        employee_profile = request.user.employee_profile
+        from django.db.models import Q, Sum
+        from datetime import datetime, timedelta
+
+        # Get date range from params
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Build query for team members
+        query = Q(manager=employee_profile)
+        managed_depts = Department.objects.filter(manager=employee_profile)
+        if managed_depts.exists():
+            query |= Q(department__in=managed_depts)
+
+        team_members = EmployeeProfile.objects.filter(
+            query, is_active=True
+        ).exclude(id=employee_profile.id).select_related('department', 'default_shift')
+
+        # Get attendance data for each team member
+        timesheet_data = []
+        for member in team_members:
+            summaries = DailySummary.objects.filter(
+                employee_id=member.employee_id,
+                date__gte=start_date,
+                date__lte=end_date
+            ).order_by('date')
+
+            total_hours = summaries.aggregate(total=Sum('final_hours'))['total'] or 0
+            days_worked = summaries.filter(final_hours__gt=0).count()
+
+            # Get daily breakdown
+            daily_records = []
+            for s in summaries:
+                daily_records.append({
+                    'date': s.date,
+                    'first_clock_in': s.first_clock_in,
+                    'last_clock_out': s.last_clock_out,
+                    'raw_hours': float(s.raw_hours) if s.raw_hours else 0,
+                    'final_hours': float(s.final_hours) if s.final_hours else 0,
+                    'status': s.current_status,
+                })
+
+            timesheet_data.append({
+                'employee_id': member.employee_id,
+                'employee_name': member.employee_name,
+                'department': member.department.name if member.department else None,
+                'role': member.role,
+                'email': member.user.email if member.user else None,
+                'default_shift': member.default_shift.name if member.default_shift else None,
+                'total_hours': float(total_hours),
+                'days_worked': days_worked,
+                'daily_records': daily_records,
+            })
+
+        return Response({
+            'start_date': start_date,
+            'end_date': end_date,
+            'team_count': len(timesheet_data),
+            'timesheet': timesheet_data
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[IsHRAdmin])
+    def managers(self, request):
+        """Get list of all managers (for assigning to employees)"""
+        managers = EmployeeProfile.objects.filter(
+            role__in=['MANAGER', 'HR_ADMIN'],
+            is_active=True
+        ).select_related('department')
+        serializer = EmployeeProfileSerializer(managers, many=True)
         return Response(serializer.data)
 
 
@@ -277,22 +405,41 @@ class DailySummaryViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Filter based on user role"""
         employee_profile = self.request.user.employee_profile
+        from django.db.models import Q
 
-        # HR sees all
+        # Base queryset filtered by role
         if employee_profile.role == 'HR_ADMIN':
-            return DailySummary.objects.all().order_by('-date')
+            queryset = DailySummary.objects.all()
+        elif employee_profile.role == 'MANAGER':
+            # Get team members: direct reports + department employees
+            query = Q(manager=employee_profile)
+            managed_depts = Department.objects.filter(manager=employee_profile)
+            if managed_depts.exists():
+                query |= Q(department__in=managed_depts)
+            team_profiles = EmployeeProfile.objects.filter(query, is_active=True)
+            team_ids = list(team_profiles.values_list('employee_id', flat=True))
+            queryset = DailySummary.objects.filter(
+                employee_id__in=team_ids + [employee_profile.employee_id]
+            )
+        else:
+            queryset = DailySummary.objects.filter(
+                employee_id=employee_profile.employee_id
+            )
 
-        # Managers see their team
-        if employee_profile.role == 'MANAGER':
-            team_ids = employee_profile.team_members.values_list('employee_id', flat=True)
-            return DailySummary.objects.filter(
-                employee_id__in=list(team_ids) + [employee_profile.employee_id]
-            ).order_by('-date')
+        # Apply filters from query params
+        employee_id = self.request.query_params.get('employee_id')
+        if employee_id:
+            queryset = queryset.filter(employee_id=employee_id)
 
-        # Employees see only their own
-        return DailySummary.objects.filter(
-            employee_id=employee_profile.employee_id
-        ).order_by('-date')
+        start_date = self.request.query_params.get('start_date')
+        if start_date:
+            queryset = queryset.filter(date__gte=start_date)
+
+        end_date = self.request.query_params.get('end_date')
+        if end_date:
+            queryset = queryset.filter(date__lte=end_date)
+
+        return queryset.order_by('-date')
 
 
 class AttendanceTapViewSet(viewsets.ReadOnlyModelViewSet):
