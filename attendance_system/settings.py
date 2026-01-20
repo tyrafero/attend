@@ -32,7 +32,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,*.railway.a
 # CSRF Trusted Origins (required for Railway deployment)
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='https://web-production-5d1e4.up.railway.app',
+    default='https://web-production-5d1e4.up.railway.app,https://*.up.railway.app',
     cast=Csv()
 )
 

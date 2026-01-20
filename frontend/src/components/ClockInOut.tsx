@@ -9,6 +9,8 @@ export function ClockInOut() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [currentTime, setCurrentTime] = useState(new Date());
+  // Local state for immediate UI update
+  const [localStatus, setLocalStatus] = useState<'IN' | 'OUT' | null>(null);
 
   // Update clock every second
   useEffect(() => {
@@ -24,6 +26,13 @@ export function ClockInOut() {
     staleTime: 0, // Always consider data stale
   });
 
+  // Sync local status with server status when it changes
+  useEffect(() => {
+    if (currentStatus?.current_status) {
+      setLocalStatus(currentStatus.current_status as 'IN' | 'OUT');
+    }
+  }, [currentStatus?.current_status]);
+
   // Clock in/out mutation
   const clockMutation = useMutation({
     mutationFn: () => attendanceApi.clock(),
@@ -31,10 +40,13 @@ export function ClockInOut() {
       setMessage(data.message);
       setMessageType('success');
 
-      // Optimistically update the status cache with response data
+      // Immediately update local state for instant UI feedback
+      setLocalStatus(data.action as 'IN' | 'OUT');
+
+      // Update cache
       queryClient.setQueryData(['attendance', 'current'], (old: any) => ({
         ...old,
-        current_status: data.action, // 'IN' or 'OUT' from response
+        current_status: data.action,
         first_clock_in: data.action === 'IN' && !old?.first_clock_in
           ? data.time
           : old?.first_clock_in,
@@ -42,8 +54,8 @@ export function ClockInOut() {
         hours_worked: data.hours_worked || old?.hours_worked,
       }));
 
-      // Also invalidate and refetch to ensure consistency
-      await queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      // Invalidate to refetch fresh data
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
 
       setTimeout(() => setMessage(''), 3000);
     },
@@ -58,7 +70,8 @@ export function ClockInOut() {
     clockMutation.mutate();
   };
 
-  const isCurrentlyIn = currentStatus?.current_status === 'IN';
+  // Use local status for immediate feedback, fallback to server status
+  const isCurrentlyIn = localStatus === 'IN' || (localStatus === null && currentStatus?.current_status === 'IN');
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
