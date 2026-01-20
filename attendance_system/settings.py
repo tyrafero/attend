@@ -208,12 +208,11 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 WHITENOISE_INDEX_FILE = True
 
 # CORS Configuration (for React frontend)
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',  # Vite dev server
-    'http://127.0.0.1:5173',
-    'http://localhost:3002',  # Vite dev server (alternate port)
-    'http://127.0.0.1:3002',
-]
+CORS_ALLOWED_ORIGINS = config(
+    'CORS_ALLOWED_ORIGINS',
+    default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:3002,http://127.0.0.1:3002',
+    cast=Csv()
+)
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',

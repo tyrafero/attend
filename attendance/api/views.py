@@ -11,6 +11,7 @@ from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from django_ratelimit.decorators import ratelimit
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 from .serializers import (
     LoginSerializer,
@@ -40,6 +41,7 @@ def ratelimit_handler(request, exception):
     }, status=429)
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @ratelimit(key='ip', rate='10/h', method='POST', block=True)
@@ -68,6 +70,7 @@ def login_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @ratelimit(key='ip', rate='5/h', method='POST', block=True)
