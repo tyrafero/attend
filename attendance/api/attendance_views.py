@@ -153,6 +153,26 @@ def clock_action_view(request):
     daily_summary.save()
 
     # Prepare response
+    # Format hours to 2 decimal places
+    hours_worked = None
+    if daily_summary.final_hours:
+        hours_worked = f"{float(daily_summary.final_hours):.2f}"
+
+    # Create friendly greeting message based on time of day
+    first_name = employee_profile.employee_name.split()[0] if employee_profile.employee_name else 'there'
+    hour = current_time.hour
+    if hour < 12:
+        time_greeting = "Good morning"
+    elif hour < 17:
+        time_greeting = "Good afternoon"
+    else:
+        time_greeting = "Good evening"
+
+    if action == 'IN':
+        greeting = f"{time_greeting}, {first_name}! You're clocked in."
+    else:
+        greeting = f"Goodbye, {first_name}! You've worked {hours_worked or '0.00'}h today."
+
     response_data = {
         'success': True,
         'action': action,
@@ -160,9 +180,9 @@ def clock_action_view(request):
         'employee_name': employee_profile.employee_name,
         'timestamp': tap.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
         'time': current_time.strftime('%H:%M:%S'),
-        'hours_worked': str(daily_summary.final_hours) if daily_summary.final_hours else None,
+        'hours_worked': hours_worked,
         'authenticated_via': auth_method,
-        'message': f'Successfully clocked {action.lower()}',
+        'message': greeting,
         'til': til_info
     }
 
