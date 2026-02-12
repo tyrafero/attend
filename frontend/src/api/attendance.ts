@@ -78,4 +78,26 @@ export const attendanceApi = {
     }
     return Array.isArray(response.data) ? response.data : [];
   },
+
+  // Update daily summary (managers only)
+  updateDailySummary: async (id: number, data: {
+    first_clock_in?: string;
+    last_clock_out?: string;
+    reason: string;
+  }) => {
+    const response = await apiClient.patch(`/api/daily-summaries/${id}/`, data);
+    return response.data;
+  },
+
+  // Create manual entry (managers only)
+  createManualEntry: async (data: {
+    employee_id: string;
+    date: string;
+    first_clock_in: string;
+    last_clock_out: string;
+    reason: string;
+  }) => {
+    const response = await apiClient.post('/api/daily-summaries/create_manual_entry/', data);
+    return response.data;
+  },
 };

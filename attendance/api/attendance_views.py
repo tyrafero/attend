@@ -5,6 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes, action, authentication_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime, timedelta
@@ -18,8 +19,8 @@ from attendance.models import (
 )
 from attendance.services import TILService
 from .serializers import (
-    ClockActionSerializer, DailySummarySerializer,
-    AttendanceTapSerializer, CurrentStatusSerializer,
+    ClockActionSerializer, DailySummarySerializer, DailySummaryEditSerializer,
+    DailySummaryCreateSerializer, AttendanceTapSerializer, CurrentStatusSerializer,
     DepartmentSerializer, ShiftSerializer, EmployeeProfileSerializer,
     EmployeeCreateSerializer, EmployeeUpdateSerializer,
     ShiftAssignmentSerializer, TILRecordSerializer, TILBalanceSerializer,
@@ -28,9 +29,24 @@ from .serializers import (
 from .permissions import IsEmployee, IsManager, IsHRAdmin
 
 
+class OptionalJWTAuthentication(JWTAuthentication):
+    """
+    JWT Authentication that allows anonymous requests for PIN/NFC.
+    If a valid JWT token is present, authenticate the user.
+    If no token or invalid token, return None to allow PIN/NFC authentication.
+    """
+    def authenticate(self, request):
+        try:
+            result = super().authenticate(request)
+            return result
+        except Exception:
+            # Allow anonymous access for PIN/NFC authentication
+            return None
+
+
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
+@authentication_classes([OptionalJWTAuthentication])
 @permission_classes([AllowAny])  # Allows both JWT and PIN authentication
 @ratelimit(key='ip', rate='30/h', method='POST', block=True)
 def clock_action_view(request):
@@ -365,6 +381,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
             daily_records = []
             for s in summaries:
                 daily_records.append({
+                    'id': s.id,  # Include ID for editing
                     'date': s.date,
                     'first_clock_in': s.first_clock_in,
                     'last_clock_out': s.last_clock_out,
@@ -403,10 +420,23 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class DailySummaryViewSet(viewsets.ReadOnlyModelViewSet):
-    """Daily attendance summaries (read-only)"""
-    serializer_class = DailySummarySerializer
+class DailySummaryViewSet(viewsets.ModelViewSet):
+    """Daily attendance summaries with editing capabilities for managers"""
     permission_classes = [IsEmployee]
+
+    def get_serializer_class(self):
+        """Use different serializers for different actions"""
+        if self.action in ['update', 'partial_update']:
+            return DailySummaryEditSerializer
+        elif self.action == 'create_manual_entry':
+            return DailySummaryCreateSerializer
+        return DailySummarySerializer
+
+    def get_permissions(self):
+        """Require manager permission for editing"""
+        if self.action in ['update', 'partial_update', 'destroy', 'create_manual_entry']:
+            return [IsManager()]
+        return [IsEmployee()]
 
     def get_queryset(self):
         """Filter based on user role"""
@@ -446,6 +476,107 @@ class DailySummaryViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(date__lte=end_date)
 
         return queryset.order_by('-date')
+
+    def perform_update(self, serializer):
+        """Log timesheet edits before saving"""
+        from attendance.models import TimesheetEdit
+
+        instance = self.get_object()
+        reason = serializer.validated_data.pop('reason', 'No reason provided')
+
+        # Track changes for audit log
+        changes = []
+        if 'first_clock_in' in serializer.validated_data:
+            old_val = str(instance.first_clock_in) if instance.first_clock_in else 'None'
+            new_val = str(serializer.validated_data['first_clock_in'])
+            if old_val != new_val:
+                changes.append(('first_clock_in', old_val, new_val))
+
+        if 'last_clock_out' in serializer.validated_data:
+            old_val = str(instance.last_clock_out) if instance.last_clock_out else 'None'
+            new_val = str(serializer.validated_data['last_clock_out'])
+            if old_val != new_val:
+                changes.append(('last_clock_out', old_val, new_val))
+
+        # Save the changes
+        updated_instance = serializer.save()
+
+        # Log each change
+        for field_changed, old_value, new_value in changes:
+            TimesheetEdit.objects.create(
+                edited_by=self.request.user,
+                employee_id=instance.employee_id,
+                employee_name=instance.employee_name,
+                date=instance.date,
+                field_changed=field_changed,
+                old_value=old_value,
+                new_value=new_value,
+                reason=reason
+            )
+
+    @action(detail=False, methods=['post'], permission_classes=[IsManager])
+    def create_manual_entry(self, request):
+        """Create a manual timesheet entry for a missing day"""
+        from attendance.models import TimesheetEdit, SystemSettings
+        from decimal import Decimal
+
+        serializer = DailySummaryCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        employee_profile = data['employee_profile']
+        reason = data['reason']
+
+        # Calculate hours
+        first_in_dt = datetime.combine(data['date'], data['first_clock_in'])
+        last_out_dt = datetime.combine(data['date'], data['last_clock_out'])
+        time_diff = last_out_dt - first_in_dt
+        raw_hours = Decimal(time_diff.total_seconds() / 3600)
+
+        # Apply break deduction
+        system_settings = SystemSettings.load()
+        if raw_hours > 5:
+            break_deduction = system_settings.break_duration_hours
+        else:
+            break_deduction = Decimal('0')
+
+        final_hours = raw_hours - break_deduction
+
+        # Create the daily summary
+        daily_summary = DailySummary.objects.create(
+            date=data['date'],
+            employee_id=employee_profile.employee_id,
+            employee_name=employee_profile.employee_name,
+            first_clock_in=data['first_clock_in'],
+            last_clock_out=data['last_clock_out'],
+            raw_hours=raw_hours,
+            break_deduction=break_deduction,
+            final_hours=final_hours,
+            current_status='OUT',
+            tap_count=2  # One in, one out
+        )
+
+        # Log the manual entry
+        TimesheetEdit.objects.create(
+            edited_by=request.user,
+            employee_id=employee_profile.employee_id,
+            employee_name=employee_profile.employee_name,
+            date=data['date'],
+            field_changed='manual_entry',
+            old_value='None',
+            new_value=f"{data['first_clock_in']} - {data['last_clock_out']}",
+            reason=reason
+        )
+
+        return Response({
+            'message': 'Manual entry created successfully',
+            'id': daily_summary.id,
+            'date': daily_summary.date,
+            'employee_id': daily_summary.employee_id,
+            'first_clock_in': daily_summary.first_clock_in,
+            'last_clock_out': daily_summary.last_clock_out,
+            'final_hours': str(daily_summary.final_hours)
+        }, status=status.HTTP_201_CREATED)
 
 
 class AttendanceTapViewSet(viewsets.ReadOnlyModelViewSet):
@@ -557,9 +688,16 @@ class TILRecordViewSet(viewsets.ModelViewSet):
         return queryset.filter(employee=employee_profile).order_by('-date')
 
     def perform_create(self, serializer):
-        """Set requested_by to current user"""
+        """Set requested_by to current user and notify manager"""
         employee_profile = self.request.user.employee_profile
-        serializer.save(requested_by=employee_profile)
+        til_record = serializer.save(requested_by=employee_profile)
+
+        # Send notification to manager (if Celery is available)
+        try:
+            from attendance.tasks import send_til_request_notification_to_manager
+            send_til_request_notification_to_manager.delay(til_record.id)
+        except Exception:
+            pass  # Celery not available, skip notification
 
     @action(detail=True, methods=['post'], permission_classes=[IsManager])
     def approve(self, request, pk=None):
@@ -686,8 +824,27 @@ class LeaveRecordViewSet(viewsets.ModelViewSet):
         return queryset.filter(employee_profile=employee_profile).order_by('-start_date')
 
     def perform_create(self, serializer):
-        """Set employee_profile to current user"""
-        serializer.save(employee_profile=self.request.user.employee_profile)
+        """Set employee_profile to current user and notify manager"""
+        employee_profile = self.request.user.employee_profile
+
+        # Try to find matching V1 EmployeeRegistry for backward compatibility
+        from attendance.models import EmployeeRegistry
+        try:
+            selected_employee = EmployeeRegistry.objects.get(employee_id=employee_profile.employee_id)
+        except EmployeeRegistry.DoesNotExist:
+            selected_employee = None
+
+        leave_record = serializer.save(
+            employee_profile=employee_profile,
+            selected_employee=selected_employee
+        )
+
+        # Send notification to manager (if Celery is available)
+        try:
+            from attendance.tasks import send_leave_request_notification_to_manager
+            send_leave_request_notification_to_manager.delay(leave_record.id)
+        except Exception:
+            pass  # Celery not available, skip notification
 
     @action(detail=False, methods=['get'], permission_classes=[IsManager])
     def pending(self, request):

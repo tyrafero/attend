@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { useQuery } from '@tanstack/react-query';
-import { adminApi, type EmployeeTimesheet } from '../api/admin';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { adminApi, type EmployeeTimesheet, type DailyRecord } from '../api/admin';
+import { attendanceApi } from '../api/attendance';
 
 export function TeamPage() {
   const { user, logout } = useAuthStore();
@@ -300,6 +301,7 @@ export function TeamPage() {
           startDate={startDate}
           endDate={endDate}
           onClose={() => setSelectedEmployee(null)}
+          onRefresh={() => refetch()}
         />
       )}
     </div>
@@ -312,12 +314,51 @@ function EmployeeDetailModal({
   startDate,
   endDate,
   onClose,
+  onRefresh,
 }: {
   employee: EmployeeTimesheet;
   startDate: string;
   endDate: string;
   onClose: () => void;
+  onRefresh: () => void;
 }) {
+  const [editingRecord, setEditingRecord] = useState<DailyRecord | null>(null);
+  const [showAddEntry, setShowAddEntry] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Update timesheet mutation
+  const updateTimesheet = useMutation({
+    mutationFn: (data: { id: number; first_clock_in: string; last_clock_out: string; reason: string }) =>
+      attendanceApi.updateDailySummary(data.id, {
+        first_clock_in: data.first_clock_in,
+        last_clock_out: data.last_clock_out,
+        reason: data.reason,
+      }),
+    onSuccess: () => {
+      setMessage({ type: 'success', text: 'Timesheet updated successfully' });
+      setEditingRecord(null);
+      onRefresh();
+      setTimeout(() => setMessage(null), 3000);
+    },
+    onError: () => {
+      setMessage({ type: 'error', text: 'Failed to update timesheet' });
+    },
+  });
+
+  // Create manual entry mutation
+  const createEntry = useMutation({
+    mutationFn: attendanceApi.createManualEntry,
+    onSuccess: () => {
+      setMessage({ type: 'success', text: 'Manual entry created successfully' });
+      setShowAddEntry(false);
+      onRefresh();
+      setTimeout(() => setMessage(null), 3000);
+    },
+    onError: () => {
+      setMessage({ type: 'error', text: 'Failed to create entry' });
+    },
+  });
+
   // Export individual employee's timesheet
   const exportEmployeeCSV = () => {
     const headers = ['Date', 'Clock In', 'Clock Out', 'Raw Hours', 'Final Hours', 'Status'];
@@ -361,6 +402,13 @@ function EmployeeDetailModal({
             </button>
           </div>
         </div>
+
+        {/* Message Banner */}
+        {message && (
+          <div className={`px-6 py-3 ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            {message.text}
+          </div>
+        )}
 
         {/* Employee Info */}
         <div className="px-6 py-4 bg-gray-50 border-b">
@@ -408,12 +456,20 @@ function EmployeeDetailModal({
         <div className="px-6 py-4 overflow-y-auto" style={{ maxHeight: '300px' }}>
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold text-gray-900">Daily Attendance ({startDate} to {endDate})</h3>
-            <button
-              onClick={exportEmployeeCSV}
-              className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200"
-            >
-              Export CSV
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddEntry(true)}
+                className="px-3 py-1 bg-purple-100 text-purple-700 rounded text-sm hover:bg-purple-200"
+              >
+                + Add Entry
+              </button>
+              <button
+                onClick={exportEmployeeCSV}
+                className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200"
+              >
+                Export CSV
+              </button>
+            </div>
           </div>
 
           {employee.daily_records.length === 0 ? (
@@ -428,6 +484,7 @@ function EmployeeDetailModal({
                   <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Raw Hours</th>
                   <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Final Hours</th>
                   <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -455,6 +512,15 @@ function EmployeeDetailModal({
                         {record.status}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => setEditingRecord(record)}
+                        className="text-purple-600 hover:text-purple-800 text-sm"
+                        title="Edit"
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -471,6 +537,205 @@ function EmployeeDetailModal({
             Close
           </button>
         </div>
+      </div>
+
+      {/* Edit Record Modal */}
+      {editingRecord && (
+        <EditTimesheetModal
+          record={editingRecord}
+          onClose={() => setEditingRecord(null)}
+          onSave={(data) => updateTimesheet.mutate({ ...data, id: editingRecord.id })}
+          isLoading={updateTimesheet.isPending}
+        />
+      )}
+
+      {/* Add Entry Modal */}
+      {showAddEntry && (
+        <AddEntryModal
+          employeeId={employee.employee_id}
+          onClose={() => setShowAddEntry(false)}
+          onSave={(data) => createEntry.mutate(data)}
+          isLoading={createEntry.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+// Edit Timesheet Modal Component
+function EditTimesheetModal({
+  record,
+  onClose,
+  onSave,
+  isLoading,
+}: {
+  record: DailyRecord;
+  onClose: () => void;
+  onSave: (data: { first_clock_in: string; last_clock_out: string; reason: string }) => void;
+  isLoading: boolean;
+}) {
+  const [clockIn, setClockIn] = useState(record.first_clock_in?.slice(0, 5) || '');
+  const [clockOut, setClockOut] = useState(record.last_clock_out?.slice(0, 5) || '');
+  const [reason, setReason] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({ first_clock_in: clockIn, last_clock_out: clockOut, reason });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-4">Edit Timesheet Entry</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Editing: {new Date(record.date).toLocaleDateString('en-AU', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Clock In</label>
+              <input
+                type="time"
+                value={clockIn}
+                onChange={(e) => setClockIn(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Clock Out</label>
+              <input
+                type="time"
+                value={clockOut}
+                onChange={(e) => setClockOut(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Edit *</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              rows={3}
+              placeholder="Explain why this edit is being made..."
+              required
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !reason.trim()}
+              className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+            >
+              {isLoading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Add Entry Modal Component
+function AddEntryModal({
+  employeeId,
+  onClose,
+  onSave,
+  isLoading,
+}: {
+  employeeId: string;
+  onClose: () => void;
+  onSave: (data: { employee_id: string; date: string; first_clock_in: string; last_clock_out: string; reason: string }) => void;
+  isLoading: boolean;
+}) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [clockIn, setClockIn] = useState('08:30');
+  const [clockOut, setClockOut] = useState('17:00');
+  const [reason, setReason] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({ employee_id: employeeId, date, first_clock_in: clockIn, last_clock_out: clockOut, reason });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-4">Add Manual Entry</h3>
+        <p className="text-sm text-gray-500 mb-4">Create a timesheet entry for a missing day</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Clock In</label>
+              <input
+                type="time"
+                value={clockIn}
+                onChange={(e) => setClockIn(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Clock Out</label>
+              <input
+                type="time"
+                value={clockOut}
+                onChange={(e) => setClockOut(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Manual Entry *</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              rows={3}
+              placeholder="Explain why this manual entry is being created..."
+              required
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !reason.trim()}
+              className="flex-1 px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+            >
+              {isLoading ? 'Creating...' : 'Create Entry'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

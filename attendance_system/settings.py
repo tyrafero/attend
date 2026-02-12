@@ -192,6 +192,9 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@attendance.com')
 
+# Frontend URL for email links
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
 # Static files
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 

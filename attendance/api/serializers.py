@@ -305,6 +305,49 @@ class DailySummarySerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
+class DailySummaryEditSerializer(serializers.ModelSerializer):
+    """Serializer for editing DailySummary (managers only)"""
+    reason = serializers.CharField(write_only=True, required=True, help_text='Reason for the edit')
+
+    class Meta:
+        model = DailySummary
+        fields = [
+            'id', 'date', 'employee_id', 'employee_name',
+            'first_clock_in', 'last_clock_out',
+            'raw_hours', 'break_deduction', 'final_hours',
+            'current_status', 'tap_count', 'reason'
+        ]
+        read_only_fields = ['id', 'date', 'employee_id', 'employee_name', 'raw_hours', 'break_deduction', 'final_hours', 'tap_count']
+
+
+class DailySummaryCreateSerializer(serializers.Serializer):
+    """Serializer for creating manual DailySummary entries (managers only)"""
+    employee_id = serializers.CharField(required=True)
+    date = serializers.DateField(required=True)
+    first_clock_in = serializers.TimeField(required=True)
+    last_clock_out = serializers.TimeField(required=True)
+    reason = serializers.CharField(required=True, help_text='Reason for manual entry')
+
+    def validate(self, attrs):
+        # Check if entry already exists for this date/employee
+        from attendance.models import DailySummary, EmployeeProfile
+        employee_id = attrs.get('employee_id')
+        date = attrs.get('date')
+
+        # Verify employee exists
+        try:
+            employee = EmployeeProfile.objects.get(employee_id=employee_id)
+            attrs['employee_profile'] = employee
+        except EmployeeProfile.DoesNotExist:
+            raise serializers.ValidationError({'employee_id': 'Employee not found'})
+
+        # Check for existing entry
+        if DailySummary.objects.filter(employee_id=employee_id, date=date).exists():
+            raise serializers.ValidationError({'date': 'An entry already exists for this employee on this date'})
+
+        return attrs
+
+
 class ClockActionSerializer(serializers.Serializer):
     """
     Serializer for clock in/out action

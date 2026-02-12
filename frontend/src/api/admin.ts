@@ -78,6 +78,7 @@ export interface UpdateDepartmentData {
 }
 
 export interface DailyRecord {
+  id: number;
   date: string;
   first_clock_in: string | null;
   last_clock_out: string | null;

@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytz
 import logging
 from .models import (
-    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings, LeaveRecord
+    EmployeeRegistry, AttendanceTap, DailySummary, EmailLog, SystemSettings, LeaveRecord, TILRecord
 )
 
 logger = logging.getLogger(__name__)
@@ -720,6 +720,262 @@ Digital Cinema Attendance System
         return f"TILRecord {til_record_id} not found"
     except Exception as e:
         logger.error(f"Failed to send TIL approval notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
+def send_til_request_notification_to_manager(til_record_id):
+    """Send email notification to manager when TIL is requested"""
+    from django.core.mail import EmailMultiAlternatives
+    from attendance.models import TILRecord, EmployeeProfile
+    from django.conf import settings as django_settings
+
+    try:
+        til_record = TILRecord.objects.select_related('employee', 'employee__manager').get(id=til_record_id)
+        employee = til_record.employee
+
+        # Get manager
+        manager = employee.manager
+        if not manager or not manager.user or not manager.user.email:
+            # Try to get department manager
+            if employee.department and employee.department.manager:
+                manager = employee.department.manager
+            else:
+                return f"No manager found for employee {employee.employee_name}"
+
+        if not manager.user or not manager.user.email:
+            return f"Manager {manager.employee_name} has no email"
+
+        # Get frontend URL
+        frontend_url = getattr(django_settings, 'FRONTEND_URL', 'http://localhost:5173')
+        portal_link = f"{frontend_url}/til"
+
+        subject = f'TIL Request - {employee.employee_name}'
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">TIL Request</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+                <p style="font-size: 16px;">Hello <strong>{manager.employee_name}</strong>,</p>
+                <p style="font-size: 16px;"><strong>{employee.employee_name}</strong> has submitted a Time in Lieu (TIL) request that requires your approval.</p>
+
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #8B5CF6;">
+                    <h3 style="margin-top: 0; color: #374151;">TIL Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Employee:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{employee.employee_name}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Type:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{til_record.get_til_type_display()}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Hours:</td>
+                            <td style="padding: 8px 0; font-weight: bold; color: #10B981;">{til_record.hours}h</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Date:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{til_record.date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Reason:</td>
+                            <td style="padding: 8px 0;">{til_record.reason or 'N/A'}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{portal_link}" style="display: inline-block; background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                        Review in Manager Portal
+                    </a>
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">Please review and approve or reject this request in the manager portal.</p>
+            </div>
+            <div style="background: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; margin: 0; font-size: 12px;">Digital Cinema Attendance System</p>
+            </div>
+        </div>
+        """
+
+        text_content = f"""
+TIL Request
+
+Hello {manager.employee_name},
+
+{employee.employee_name} has submitted a Time in Lieu (TIL) request that requires your approval.
+
+TIL Details:
+- Employee: {employee.employee_name}
+- Type: {til_record.get_til_type_display()}
+- Hours: {til_record.hours}h
+- Date: {til_record.date}
+- Reason: {til_record.reason or 'N/A'}
+
+Please review this request at: {portal_link}
+
+Digital Cinema Attendance System
+        """
+
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[manager.user.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        EmailLog.objects.create(
+            email_type='TIL_REQUEST_TO_MANAGER',
+            recipient=manager.user.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'TIL request notification sent to manager {manager.employee_name}'
+        )
+
+        return f"TIL request notification sent to {manager.user.email}"
+
+    except TILRecord.DoesNotExist:
+        return f"TILRecord {til_record_id} not found"
+    except Exception as e:
+        logger.error(f"Failed to send TIL request notification: {e}")
+        return f"Failed: {str(e)}"
+
+
+@shared_task
+def send_leave_request_notification_to_manager(leave_record_id):
+    """Send email notification to manager when leave is requested"""
+    from django.core.mail import EmailMultiAlternatives
+    from attendance.models import LeaveRecord, EmployeeProfile
+    from django.conf import settings as django_settings
+
+    try:
+        leave_record = LeaveRecord.objects.select_related(
+            'employee_profile', 'employee_profile__manager'
+        ).get(id=leave_record_id)
+        employee = leave_record.employee_profile
+
+        if not employee:
+            return f"No employee profile found for leave record {leave_record_id}"
+
+        # Get manager
+        manager = employee.manager
+        if not manager or not manager.user or not manager.user.email:
+            # Try to get department manager
+            if employee.department and employee.department.manager:
+                manager = employee.department.manager
+            else:
+                return f"No manager found for employee {employee.employee_name}"
+
+        if not manager.user or not manager.user.email:
+            return f"Manager {manager.employee_name} has no email"
+
+        # Get frontend URL
+        frontend_url = getattr(django_settings, 'FRONTEND_URL', 'http://localhost:5173')
+        portal_link = f"{frontend_url}/leave"
+
+        subject = f'Leave Request - {employee.employee_name}'
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Leave Request</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+                <p style="font-size: 16px;">Hello <strong>{manager.employee_name}</strong>,</p>
+                <p style="font-size: 16px;"><strong>{employee.employee_name}</strong> has submitted a leave request that requires your approval.</p>
+
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #3B82F6;">
+                    <h3 style="margin-top: 0; color: #374151;">Leave Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Employee:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{employee.employee_name}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Leave Type:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.get_leave_type_display()}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">From:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.start_date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">To:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.end_date.strftime('%A, %d %B %Y')}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Duration:</td>
+                            <td style="padding: 8px 0; font-weight: bold;">{leave_record.total_days} day(s) ({leave_record.total_hours}h)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: #6b7280;">Reason:</td>
+                            <td style="padding: 8px 0;">{leave_record.reason or 'N/A'}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{portal_link}" style="display: inline-block; background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                        Review in Manager Portal
+                    </a>
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">Please review and approve or reject this request in the manager portal.</p>
+            </div>
+            <div style="background: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; margin: 0; font-size: 12px;">Digital Cinema Attendance System</p>
+            </div>
+        </div>
+        """
+
+        text_content = f"""
+Leave Request
+
+Hello {manager.employee_name},
+
+{employee.employee_name} has submitted a leave request that requires your approval.
+
+Leave Details:
+- Employee: {employee.employee_name}
+- Leave Type: {leave_record.get_leave_type_display()}
+- From: {leave_record.start_date}
+- To: {leave_record.end_date}
+- Duration: {leave_record.total_days} day(s) ({leave_record.total_hours}h)
+- Reason: {leave_record.reason or 'N/A'}
+
+Please review this request at: {portal_link}
+
+Digital Cinema Attendance System
+        """
+
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[manager.user.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        EmailLog.objects.create(
+            email_type='LEAVE_REQUEST_TO_MANAGER',
+            recipient=manager.user.email,
+            employee_id=employee.employee_id,
+            status='SUCCESS',
+            details=f'Leave request notification sent to manager {manager.employee_name}'
+        )
+
+        return f"Leave request notification sent to {manager.user.email}"
+
+    except LeaveRecord.DoesNotExist:
+        return f"LeaveRecord {leave_record_id} not found"
+    except Exception as e:
+        logger.error(f"Failed to send leave request notification: {e}")
         return f"Failed: {str(e)}"
 
 
