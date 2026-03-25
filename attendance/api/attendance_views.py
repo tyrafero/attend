@@ -71,9 +71,18 @@ def clock_action_view(request):
 
     # Check office hours
     system_settings = SystemSettings.load()
-    if current_time < system_settings.office_start_time or current_time > system_settings.office_end_time:
+
+    # Convert office times to time objects if they're strings
+    office_start = system_settings.office_start_time
+    office_end = system_settings.office_end_time
+    if isinstance(office_start, str):
+        office_start = datetime.strptime(office_start, '%H:%M').time()
+    if isinstance(office_end, str):
+        office_end = datetime.strptime(office_end, '%H:%M').time()
+
+    if current_time < office_start or current_time > office_end:
         return Response({
-            'error': f'Clock in/out only allowed between {system_settings.office_start_time} and {system_settings.office_end_time}'
+            'error': f'Clock in/out only allowed between {office_start} and {office_end}'
         }, status=status.HTTP_400_BAD_REQUEST)
 
     # Get or create daily summary

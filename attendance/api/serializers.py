@@ -387,8 +387,18 @@ class ClockActionSerializer(serializers.Serializer):
 
         # Try NFC authentication
         if nfc_id:
+            # First try to find by nfc_id field
             try:
                 profile = EmployeeProfile.objects.get(nfc_id=nfc_id, is_active=True)
+                attrs['employee_profile'] = profile
+                attrs['authenticated_via'] = 'nfc'
+                return attrs
+            except EmployeeProfile.DoesNotExist:
+                pass
+
+            # Fallback: try to find by employee_id (for cards programmed with employee_id)
+            try:
+                profile = EmployeeProfile.objects.get(employee_id=nfc_id, is_active=True)
                 attrs['employee_profile'] = profile
                 attrs['authenticated_via'] = 'nfc'
                 return attrs

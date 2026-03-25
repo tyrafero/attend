@@ -562,6 +562,12 @@ class EmployeeProfile(models.Model):
         verbose_name_plural = 'Employee Profiles (V2)'
         ordering = ['employee_name']
 
+    def save(self, *args, **kwargs):
+        # Auto-sync nfc_id with employee_id if nfc_id is empty (for NFC tap support)
+        if not self.nfc_id:
+            self.nfc_id = self.employee_id
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.employee_id} - {self.employee_name} ({self.get_role_display()})"
 

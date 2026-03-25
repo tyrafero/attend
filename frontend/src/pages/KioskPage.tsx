@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { attendanceApi } from '../api/attendance';
 import type { ClockActionResponse } from '../types';
 
@@ -7,6 +8,8 @@ export function KioskPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<ClockActionResponse | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const nfcProcessedRef = useRef(false);
 
   // Clear any existing JWT session when entering kiosk mode
   useEffect(() => {
@@ -14,6 +17,47 @@ export function KioskPage() {
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
   }, []);
+
+  // Handle NFC tap via URL parameter (?employee_id=XXX)
+  useEffect(() => {
+    const employeeId = searchParams.get('employee_id');
+
+    // Only process if we have an employee_id, not already loading, and haven't processed this NFC tap yet
+    if (employeeId && !isLoading && !nfcProcessedRef.current) {
+      nfcProcessedRef.current = true;
+
+      const handleNfcTap = async () => {
+        setIsLoading(true);
+        setError('');
+
+        try {
+          // Use the employee_id as the nfc_id for clock action
+          const response = await attendanceApi.clock({ nfc_id: employeeId });
+          setSuccess(response);
+
+          // Clear the URL parameter after successful tap
+          setSearchParams({});
+        } catch (err: any) {
+          const errorMsg = err.response?.data?.detail
+            || err.response?.data?.non_field_errors?.[0]
+            || err.response?.data?.nfc_id?.[0]
+            || 'NFC card not recognized. Please try again or use PIN.';
+          setError(errorMsg);
+
+          // Clear the URL parameter on error too
+          setSearchParams({});
+        } finally {
+          setIsLoading(false);
+          // Reset the ref after a delay to allow re-tapping
+          setTimeout(() => {
+            nfcProcessedRef.current = false;
+          }, 1000);
+        }
+      };
+
+      handleNfcTap();
+    }
+  }, [searchParams, isLoading, setSearchParams]);
 
   const handlePinInput = (digit: string) => {
     if (pin.length < 6) {

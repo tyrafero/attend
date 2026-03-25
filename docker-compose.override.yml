@@ -1,0 +1,29 @@
+# Development overrides - automatically merged with docker-compose.yml
+# For production, rename/delete this file or use: docker-compose -f docker-compose.yml up
+#
+# Usage:
+#   Development (hot reload):  docker-compose up
+#   Production:                docker-compose -f docker-compose.yml up
+
+version: '3.8'
+
+services:
+  web:
+    # Use Django's runserver for hot reload during development
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      - DEBUG=True
+      - DJANGO_SETTINGS_MODULE=attendance_system.settings
+
+  celery_worker:
+    # Standard Celery worker (restart container manually after code changes)
+    # Or add watchdog to requirements.txt for auto-reload
+    environment:
+      - DEBUG=True
+
+  celery_beat:
+    environment:
+      - DEBUG=True
