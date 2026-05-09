@@ -7,18 +7,21 @@ from unfold.decorators import display
 from unfold.contrib.filters.admin import RangeDateFilter, RangeDateTimeFilter
 from .models import (
     EmployeeRegistry, AttendanceTap, DailySummary,
-    TimesheetEdit, EmailLog, SystemSettings, AttendanceReport, LeaveRecord
+    TimesheetEdit, EmailLog, SystemSettings, AttendanceReport, LeaveRecord,
+    # V2 models for HR-Admin
+    Department, Shift, EmployeeProfile
 )
 from . import views
 
 
 @admin.register(EmployeeRegistry)
 class EmployeeRegistryAdmin(ModelAdmin):
-    list_display = ['employee_id', 'employee_name', 'email', 'show_nfc_status', 'show_active_status', 'created_at']
-    list_filter = ['is_active', 'created_at']
+    list_display = ['employee_id', 'employee_name', 'email', 'show_nfc_status', 'show_ip_restriction', 'show_active_status', 'created_at']
+    list_filter = ['is_active', 'ip_restriction_enabled', 'created_at']
     search_fields = ['employee_id', 'employee_name', 'email', 'nfc_id']
     readonly_fields = ['created_at']
     list_filter_submit = True
+
     fieldsets = (
         ('Basic Information', {
             'fields': ('employee_id', 'employee_name', 'email', 'is_active')
@@ -26,6 +29,11 @@ class EmployeeRegistryAdmin(ModelAdmin):
         ('Authentication Methods', {
             'fields': ('pin_code', 'nfc_id'),
             'description': 'Employee can use either PIN or NFC card to clock in/out'
+        }),
+        ('IP Access Restrictions (HR-Admin Only)', {
+            'fields': ('ip_restriction_enabled', 'allowed_ip_addresses', 'ip_restriction_message'),
+            'description': 'Configure IP-based access restrictions for this employee. Only HR-Admin can edit these fields.',
+            'classes': ['collapse']
         }),
         ('Metadata', {
             'fields': ('created_at',),
@@ -39,6 +47,46 @@ class EmployeeRegistryAdmin(ModelAdmin):
     @display(description="Status", label=True)
     def show_active_status(self, obj):
         return "Active" if obj.is_active else "Inactive"
+
+    @display(description="IP Locked", label=True)
+    def show_ip_restriction(self, obj):
+        return "🔒" if obj.ip_restriction_enabled else "—"
+
+    def get_fieldsets(self, request, obj=None):
+        """Customize fieldsets based on user role - only HR-Admin can see IP restrictions"""
+        fieldsets = list(super().get_fieldsets(request, obj))
+
+        # Check if user has HR-Admin role
+        is_hr_admin = (
+            request.user.is_superuser or
+            (hasattr(request.user, 'employee_profile') and
+             hasattr(request.user.employee_profile, 'role') and
+             request.user.employee_profile.role == 'HR_ADMIN')
+        )
+
+        # Remove IP restrictions fieldset for non-HR-Admin users
+        if not is_hr_admin:
+            fieldsets = [fs for fs in fieldsets if fs[0] != 'IP Access Restrictions (HR-Admin Only)']
+
+        return fieldsets
+
+    def get_readonly_fields(self, request, obj=None):
+        """Make IP restriction fields readonly for non-HR-Admin users"""
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+
+        # Check if user has HR-Admin role
+        is_hr_admin = (
+            request.user.is_superuser or
+            (hasattr(request.user, 'employee_profile') and
+             hasattr(request.user.employee_profile, 'role') and
+             request.user.employee_profile.role == 'HR_ADMIN')
+        )
+
+        # Make IP fields readonly for non-HR-Admin users
+        if not is_hr_admin:
+            readonly_fields.extend(['ip_restriction_enabled', 'allowed_ip_addresses', 'ip_restriction_message'])
+
+        return readonly_fields
 
 
 @admin.register(AttendanceTap)
@@ -287,3 +335,93 @@ class AttendanceReportAdmin(ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         """Redirect to reports page when clicking on Attendance Reports"""
         return views.reports_view(request)
+
+
+# ============================================================================
+# HR-ADMIN MODELS - Department and Shift Management
+# ============================================================================
+
+@admin.register(Department)
+class DepartmentAdmin(ModelAdmin):
+    list_display = ['code', 'name', 'manager', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name', 'code']
+    # autocomplete_fields = ['manager']  # Disabled for now since EmployeeProfile admin is in models.py
+    readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Department Information', {
+            'fields': ('name', 'code', 'description', 'manager', 'is_active')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ['collapse']
+        })
+    )
+
+    def has_module_permission(self, request):
+        """Only HR-Admin and superuser can see this module"""
+        return (
+            request.user.is_superuser or
+            (hasattr(request.user, 'employee_profile') and
+             hasattr(request.user.employee_profile, 'role') and
+             request.user.employee_profile.role == 'HR_ADMIN')
+        )
+
+    def has_add_permission(self, request):
+        """Allow superuser and HR-Admin to add departments"""
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to change departments"""
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to delete departments"""
+        return self.has_module_permission(request)
+
+
+@admin.register(Shift)
+class ShiftAdmin(ModelAdmin):
+    list_display = ['name', 'start_time', 'end_time', 'scheduled_hours', 'department', 'is_active']
+    list_filter = ['department', 'is_active']
+    search_fields = ['name', 'code']
+    readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'code', 'department', 'is_active')
+        }),
+        ('Shift Schedule', {
+            'fields': ('start_time', 'end_time', 'scheduled_hours', 'break_duration_hours')
+        }),
+        ('Tolerance Settings', {
+            'fields': ('early_arrival_grace_minutes', 'late_departure_grace_minutes'),
+            'description': 'Grace periods for early arrival and late departure'
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ['collapse']
+        })
+    )
+
+    def has_module_permission(self, request):
+        """Only HR-Admin and superuser can see this module"""
+        return (
+            request.user.is_superuser or
+            (hasattr(request.user, 'employee_profile') and
+             hasattr(request.user.employee_profile, 'role') and
+             request.user.employee_profile.role == 'HR_ADMIN')
+        )
+
+    def has_add_permission(self, request):
+        """Allow superuser and HR-Admin to add shifts"""
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to change shifts"""
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to delete shifts"""
+        return self.has_module_permission(request)

@@ -9,6 +9,23 @@ class EmployeeRegistry(models.Model):
     pin_code = models.CharField(max_length=6, blank=True)  # 4-6 digit PIN (optional if using NFC)
     nfc_id = models.CharField(max_length=100, blank=True, unique=True, null=True)  # NFC card unique ID
     is_active = models.BooleanField(default=True)
+
+    # IP Restriction fields (for HR-Admin to configure)
+    ip_restriction_enabled = models.BooleanField(
+        default=False,
+        help_text='Enable IP restriction for this employee'
+    )
+    allowed_ip_addresses = models.TextField(
+        blank=True,
+        help_text='Comma-separated list of allowed IP addresses (e.g., 192.168.1.100, 10.0.0.1)'
+    )
+    ip_restriction_message = models.CharField(
+        max_length=255,
+        blank=True,
+        default='Access restricted to authorized IP addresses only',
+        help_text='Custom message to show when IP is not allowed'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -24,6 +41,20 @@ class EmployeeRegistry(models.Model):
 
     def __str__(self):
         return f"{self.employee_id} - {self.employee_name}"
+
+    def is_ip_allowed(self, ip_address):
+        """Check if the given IP address is allowed for this employee"""
+        if not self.ip_restriction_enabled or not self.allowed_ip_addresses:
+            return True
+
+        allowed_ips = [ip.strip() for ip in self.allowed_ip_addresses.split(',') if ip.strip()]
+        return ip_address in allowed_ips
+
+    def get_allowed_ips_list(self):
+        """Get list of allowed IP addresses"""
+        if not self.allowed_ip_addresses:
+            return []
+        return [ip.strip() for ip in self.allowed_ip_addresses.split(',') if ip.strip()]
 
 
 class AttendanceTap(models.Model):
@@ -553,6 +584,22 @@ class EmployeeProfile(models.Model):
         help_text='NFC card ID (optional)'
     )
 
+    # IP Restriction (for HR-Admin to configure) - using existing database fields
+    ip_whitelist_enabled = models.BooleanField(
+        default=False,
+        help_text='Enable IP restriction for this employee'
+    )
+    allowed_ip_addresses = models.TextField(
+        blank=True,
+        help_text='Comma-separated list of allowed IP addresses (e.g., 192.168.1.100, 10.0.0.1)'
+    )
+    ip_restriction_message = models.CharField(
+        max_length=255,
+        blank=True,
+        default='Access restricted to authorized IP addresses only',
+        help_text='Custom message to show when IP is not allowed'
+    )
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -578,6 +625,20 @@ class EmployeeProfile(models.Model):
     def is_hr_admin(self):
         """Check if user is HR admin"""
         return self.role == 'HR_ADMIN'
+
+    def is_ip_allowed(self, ip_address):
+        """Check if the given IP address is allowed for this employee"""
+        if not self.ip_whitelist_enabled or not self.allowed_ip_addresses:
+            return True
+
+        allowed_ips = [ip.strip() for ip in self.allowed_ip_addresses.split(',') if ip.strip()]
+        return ip_address in allowed_ips
+
+    def get_allowed_ips_list(self):
+        """Get list of allowed IP addresses"""
+        if not self.allowed_ip_addresses:
+            return []
+        return [ip.strip() for ip in self.allowed_ip_addresses.split(',') if ip.strip()]
 
 
 class ShiftAssignment(models.Model):
@@ -1036,6 +1097,41 @@ class DepartmentAdmin(ModelAdmin):
     list_filter = ['is_active']
     search_fields = ['name', 'code']
     autocomplete_fields = ['manager']
+    readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Department Information', {
+            'fields': ('name', 'code', 'description', 'manager', 'is_active')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ['collapse']
+        })
+    )
+
+    def has_add_permission(self, request):
+        """Allow superuser and HR-Admin to add departments"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to change departments"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to delete departments"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
 
 
 @admin.register(Shift)
@@ -1043,15 +1139,107 @@ class ShiftAdmin(ModelAdmin):
     list_display = ['name', 'start_time', 'end_time', 'scheduled_hours', 'department', 'is_active']
     list_filter = ['department', 'is_active']
     search_fields = ['name', 'code']
+    readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'code', 'department', 'is_active')
+        }),
+        ('Shift Schedule', {
+            'fields': ('start_time', 'end_time', 'scheduled_hours', 'break_duration_hours')
+        }),
+        ('Tolerance Settings', {
+            'fields': ('early_arrival_grace_minutes', 'late_departure_grace_minutes'),
+            'description': 'Grace periods for early arrival and late departure'
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ['collapse']
+        })
+    )
+
+    def has_add_permission(self, request):
+        """Allow superuser and HR-Admin to add shifts"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to change shifts"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Allow superuser and HR-Admin to delete shifts"""
+        if request.user.is_superuser:
+            return True
+        if hasattr(request.user, 'employee_profile'):
+            return request.user.employee_profile.is_hr_admin()
+        return False
 
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(ModelAdmin):
-    list_display = ['employee_id', 'employee_name', 'role', 'department', 'is_active']
-    list_filter = ['role', 'department', 'is_active']
+    list_display = ['employee_id', 'employee_name', 'role', 'department', 'show_ip_restriction', 'is_active']
+    list_filter = ['role', 'department', 'is_active', 'ip_whitelist_enabled']
     search_fields = ['employee_id', 'employee_name', 'email']
     autocomplete_fields = ['department', 'manager', 'default_shift']
     readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('user', 'employee_id', 'employee_name', 'email')
+        }),
+        ('Department & Role', {
+            'fields': ('department', 'role', 'manager', 'default_shift')
+        }),
+        ('Authentication', {
+            'fields': ('pin_hash', 'nfc_id'),
+            'description': 'PIN and NFC authentication settings'
+        }),
+        ('IP Restrictions (HR-Admin Only)', {
+            'fields': ('ip_whitelist_enabled', 'allowed_ip_addresses', 'ip_restriction_message'),
+            'description': 'Configure IP-based access restrictions for this employee',
+            'classes': ['collapse']
+        }),
+        ('Metadata', {
+            'fields': ('is_active', 'created_at', 'updated_at')
+        })
+    )
+
+    @display(description="IP Restricted", label=True)
+    def show_ip_restriction(self, obj):
+        return "✓" if obj.ip_whitelist_enabled else "—"
+
+    def get_fieldsets(self, request, obj=None):
+        """Customize fieldsets based on user role"""
+        fieldsets = super().get_fieldsets(request, obj)
+
+        # Only HR-Admin can edit IP restrictions
+        if not (request.user.is_superuser or
+                (hasattr(request.user, 'employee_profile') and
+                 request.user.employee_profile.is_hr_admin())):
+            # Remove IP restrictions fieldset for non-HR-Admin users
+            fieldsets = [fs for fs in fieldsets if fs[0] != 'IP Restrictions (HR-Admin Only)']
+
+        return fieldsets
+
+    def get_readonly_fields(self, request, obj=None):
+        """Make IP restriction fields readonly for non-HR-Admin users"""
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+
+        # If user is not HR-Admin or superuser, make IP fields readonly
+        if not (request.user.is_superuser or
+                (hasattr(request.user, 'employee_profile') and
+                 request.user.employee_profile.is_hr_admin())):
+            readonly_fields.extend(['ip_whitelist_enabled', 'allowed_ip_addresses', 'ip_restriction_message'])
+
+        return readonly_fields
 
 
 @admin.register(ShiftAssignment)
