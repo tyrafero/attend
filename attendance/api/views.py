@@ -20,7 +20,7 @@ from .serializers import (
     ChangePINSerializer,
     ResetPINSerializer,
 )
-from .permissions import IsEmployee, IsHRAdmin
+from .permissions import IsEmployee, IsHRAdmin, IPRestrictionPermission
 from attendance.models import EmployeeProfile, PINHistory
 
 

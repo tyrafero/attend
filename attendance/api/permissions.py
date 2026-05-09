@@ -2,6 +2,9 @@
 Custom permission classes for role-based access control
 """
 from rest_framework import permissions
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class IsEmployee(permissions.BasePermission):
@@ -105,3 +108,62 @@ class IsSelfOrManager(permissions.BasePermission):
             return True
 
         return False
+
+
+def get_client_ip(request):
+    """Get the client's IP address from the request"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+class IPRestrictionPermission(permissions.BasePermission):
+    """
+    Check if user's IP address is allowed based on their employee IP restrictions
+    """
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return True  # Let other permissions handle authentication
+
+        # Get user's IP address
+        client_ip = get_client_ip(request)
+        logger.info(f"User {request.user.username} accessing from IP: {client_ip}")
+
+        # Check V1 EmployeeRegistry IP restrictions
+        try:
+            from attendance.models import EmployeeRegistry
+            employee = EmployeeRegistry.objects.get(email=request.user.email)
+
+            if employee.ip_restriction_enabled:
+                is_allowed = employee.is_ip_allowed(client_ip)
+                logger.warning(f"IP restriction check for {employee.employee_name}: "
+                             f"Client IP {client_ip}, Allowed: {is_allowed}, "
+                             f"Allowed IPs: {employee.allowed_ip_addresses}")
+
+                if not is_allowed:
+                    return False
+
+        except EmployeeRegistry.DoesNotExist:
+            logger.info(f"No EmployeeRegistry found for user {request.user.username}")
+
+        # Check V2 EmployeeProfile IP restrictions
+        try:
+            if hasattr(request.user, 'employee_profile'):
+                profile = request.user.employee_profile
+                if hasattr(profile, 'ip_whitelist_enabled') and profile.ip_whitelist_enabled:
+                    is_allowed = profile.is_ip_allowed(client_ip)
+                    logger.warning(f"V2 IP restriction check for {profile.employee_name}: "
+                                 f"Client IP {client_ip}, Allowed: {is_allowed}")
+
+                    if not is_allowed:
+                        return False
+        except Exception as e:
+            logger.error(f"Error checking V2 IP restrictions: {e}")
+
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
